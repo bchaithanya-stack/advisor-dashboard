@@ -1,3 +1,6 @@
+import json
+import os
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -17,29 +20,85 @@ st.title("📊 Advisor Performance Dashboard")
 st.markdown("---")
 
 # ---------------------------------------------------
+# Config — edit these two values for your setup
+# ---------------------------------------------------
+SHEET_ID = "1CP0uVJXXiBxH4qXklkvh1q0xkocYg2mwMSf0VYXumYM"   # used when opening by key
+SHEET_NAME = "YOUR_SHEET_NAME"                                # used when opening by name (fallback)
+CREDENTIALS_FILE = "credentials.json"                         # used for local-file auth
+
+SCOPES = [
+    "https://www.googleapis.com/auth/spreadsheets",
+    "https://www.googleapis.com/auth/drive",
+]
+
+
+# ---------------------------------------------------
 # Load Google Sheet
 # ---------------------------------------------------
-# Reduced ttl to 10 seconds so the application is much more responsive to live sheet edits
+# ttl=10 so the app stays responsive to live sheet edits
 @st.cache_data(ttl=10)
-def load_data():
+def load_data() -> pd.DataFrame:
+    """
+    Loads advisor data from Google Sheets.
 
-    scope = [
-        "https://www.googleapis.com/auth/spreadsheets",
-        "https://www.googleapis.com/auth/drive"
-    ]
+    Auth strategy (tries in order):
+      1. Streamlit secrets (st.secrets["gcp_service_account"]) — for Streamlit Cloud deploys.
+      2. Local credentials.json file — for local development.
 
-    creds = Credentials.from_service_account_info(
-        st.secrets["gcp_service_account"],
-        scopes=scope,
-    )
+    Sheet lookup strategy:
+      1. Open by SHEET_ID (key) — preferred, doesn't break if the sheet is renamed.
+      2. Fall back to open by SHEET_NAME if opening by key fails.
+    """
 
-    client = gspread.authorize(creds)
+    creds = None
 
-    sheet = client.open_by_key(
-        "1CP0uVJXXiBxH4qXklkvh1q0xkocYg2mwMSf0VYXumYM"
-    )
+    # --- 1. Try Streamlit secrets first ---
+    if "gcp_service_account" in st.secrets:
+        try:
+            creds = Credentials.from_service_account_info(
+                st.secrets["gcp_service_account"],
+                scopes=SCOPES,
+            )
+        except Exception as e:
+            st.warning(f"⚠️ Found gcp_service_account in secrets, but failed to load it: {e}")
 
-    worksheet = sheet.sheet1
+    # --- 2. Fall back to local credentials.json ---
+    if creds is None:
+        if not os.path.exists(CREDENTIALS_FILE):
+            st.error(
+                "❌ No credentials found. Add `gcp_service_account` to st.secrets "
+                f"or place a `{CREDENTIALS_FILE}` file next to this script."
+            )
+            st.stop()
+        try:
+            with open(CREDENTIALS_FILE) as f:
+                creds_dict = json.load(f)
+            creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        except Exception as e:
+            st.error("❌ Error loading credentials.json")
+            st.error(str(e))
+            st.stop()
+
+    # --- Connect to Google Sheets ---
+    try:
+        client = gspread.authorize(creds)
+    except Exception as e:
+        st.error("❌ Error authorizing with Google Sheets")
+        st.error(str(e))
+        st.stop()
+
+    # --- Open the sheet: by key first, then by name ---
+    worksheet = None
+    try:
+        worksheet = client.open_by_key(SHEET_ID).sheet1
+    except Exception as e_key:
+        try:
+            worksheet = client.open(SHEET_NAME).sheet1
+        except Exception as e_name:
+            st.error("❌ Error connecting to Google Sheets (tried by key and by name)")
+            st.error(f"By key error: {e_key}")
+            st.error(f"By name error: {e_name}")
+            st.stop()
 
     return pd.DataFrame(worksheet.get_all_records())
 
@@ -50,7 +109,7 @@ def load_data():
 refresh_col, _ = st.columns([1, 5])
 with refresh_col:
     if st.button("🔄 Refresh Data"):
-        st.cache_data.clear()  # Crucial Fix: Clears ALL cached data globally across the app
+        st.cache_data.clear()  # Clears ALL cached data globally across the app
         st.success("Cache cleared successfully! Fetching new data...")
         st.rerun()
 
@@ -60,14 +119,14 @@ with refresh_col:
 df = load_data()
 
 st.subheader("🔍 Debug Data")
-
 st.write("Total Rows:", len(df))
-
 st.dataframe(df)
 
 if df.empty:
-    st.error("No data found in the Google Sheet. Check the sheet ID, sharing permissions, "
-              "and that the service account has access.")
+    st.error(
+        "No data found in the Google Sheet. Check the sheet ID/name, sharing permissions, "
+        "and that the service account has access."
+    )
     st.stop()
 
 # ---------------------------------------------------
@@ -118,7 +177,6 @@ left, right = st.columns(2)
 
 with left:
     st.subheader("👤 Advisor Details")
-
     st.write("**EMP ID:**", advisor_data["EMP Id"])
     st.write("**Advisor:**", advisor_data["Advisor Name"])
     st.write("**Email:**", advisor_data["Email Id"])
@@ -127,7 +185,6 @@ with left:
 
 with right:
     st.subheader("🏢 Reporting Hierarchy")
-
     st.write("**Process:**", advisor_data["Process"])
     st.write("**TL:**", advisor_data["TL"])
     st.write("**AM:**", advisor_data["AM"])
