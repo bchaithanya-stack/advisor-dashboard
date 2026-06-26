@@ -59,8 +59,6 @@ with refresh_col:
 # ---------------------------------------------------
 df = load_data()
 
-df = load_data()
-
 st.subheader("🔍 Debug Data")
 
 st.write("Total Rows:", len(df))
