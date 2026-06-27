@@ -144,7 +144,7 @@ def load_data():
             "Status", "TL", "AM", "CM", "Star Rating (1-5)", "Process Rank",
             "Productivity (%)", "Compliance (%) QA", "Attendance (%)", "Total LOP's Days",
             "Attendance Score (1-5)", "LOP Score (1-5)", "Performance Score (1-5)",
-            "Productivity Score (1-5)", "Compliance Score (1-5)"
+            "Productiviy Score (1-5)", "Compliance Score (1-5)"
         ]
         
         missing_columns = [col for col in required_columns if col not in df.columns]
@@ -297,8 +297,8 @@ with col1:
 
 with col2:
     st.write("**Productivity Score**")
-    st.progress(float(advisor_data["Productivity Score (1-5)"]) / 5)
-    st.write(f"Score: {advisor_data['Productivity Score (1-5)']}/5")
+    st.progress(float(advisor_data["Productiviy Score (1-5)"]) / 5)
+    st.write(f"Score: {advisor_data['Productiviy Score (1-5)']}/5")
 
     st.write("**Compliance Score**")
     st.progress(float(advisor_data["Compliance Score (1-5)"]) / 5)
@@ -324,7 +324,7 @@ chart_df = pd.DataFrame({
         advisor_data["Attendance Score (1-5)"],
         advisor_data["LOP Score (1-5)"],
         advisor_data["Performance Score (1-5)"],
-        advisor_data["Productivity Score (1-5)"],
+        advisor_data["Productiviy Score (1-5)"],
         advisor_data["Compliance Score (1-5)"]
     ]
 })
@@ -362,7 +362,7 @@ strengths = []
 if advisor_data["Attendance Score (1-5)"] >= 4:
     strengths.append("✅ Excellent Attendance")
 
-if advisor_data["Productivity Score (1-5)"] >= 4:
+if advisor_data["Productiviy Score (1-5)"] >= 4:
     strengths.append("✅ High Productivity")
 
 if advisor_data["Compliance Score (1-5)"] >= 4:
@@ -388,7 +388,7 @@ improvements = []
 if advisor_data["Attendance Score (1-5)"] < 4:
     improvements.append("Improve Attendance")
 
-if advisor_data["Productivity Score (1-5)"] < 4:
+if advisor_data["Productiviy Score (1-5)"] < 4:
     improvements.append("Increase Productivity")
 
 if advisor_data["Compliance Score (1-5)"] < 4:
