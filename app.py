@@ -148,7 +148,6 @@ st.subheader("🔍 Filters & Selection")
 
 view_col = st.columns(1)[0]
 with view_col:
-    # ADDED THE NEW MANAGEMENT VIEW HERE
     view_type = st.radio(
         "📊 Select View Type:",
         ["👤 Advisor View", "👥 Support Staff View", "📈 Overall View", "🏢 Management Summary"],
@@ -294,7 +293,7 @@ elif view_type == "📈 Overall View":
         overall_df = overall_df.sort_values("Star Rating (1-5)", ascending=False)
 
 # ===================================================
-# MANAGEMENT SUMMARY VIEW FILTERS (NEW)
+# MANAGEMENT SUMMARY VIEW FILTERS
 # ===================================================
 elif view_type == "🏢 Management Summary":
     
@@ -511,14 +510,14 @@ elif view_type == "📈 Overall View" and overall_df is not None and len(overall
         )
 
 # ===================================================
-# MANAGEMENT SUMMARY VIEW CONTENT (NEW)
+# MANAGEMENT SUMMARY VIEW CONTENT
 # ===================================================
 elif view_type == "🏢 Management Summary" and mgmt_df is not None and len(mgmt_df) > 0:
     
     st.success(f"✅ Showing Management Summaries | Location: **{selected_mgmt_location}** | POD Leader: **{selected_mgmt_pod}**")
     st.markdown("---")
     
-    # Helper function to generate aggregate tables
+    # Helper function to generate aggregate tables with a balanced Final Performance Score
     def get_aggregated_summary(df, group_by_col):
         if group_by_col not in df.columns:
             return pd.DataFrame()
@@ -526,41 +525,69 @@ elif view_type == "🏢 Management Summary" and mgmt_df is not None and len(mgmt
         summary = df.groupby(group_by_col).agg(
             Number_of_Advisors=('EMP Id', 'count'),
             Avg_Star_Rating=('Star Rating (1-5)', 'mean'),
-            Avg_Productivity=('Productivity (%)', 'mean'),
-            Avg_Compliance=('Compliance (%) QA', 'mean'),
-            Avg_Attendance=('Attendance (%)', 'mean')
+            Avg_Productivity_Pct=('Productivity (%)', 'mean'),
+            Avg_Compliance_Pct=('Compliance (%) QA', 'mean'),
+            Avg_Attendance_Pct=('Attendance (%)', 'mean'),
+            Avg_LOP_Days=('Total LOP\'s Days', 'mean')
         ).reset_index()
         
-        # Round the metrics for a cleaner look
+        # Calculate final balanced rating out of 5 across metrics
+        # Standardizing % metrics to a 5-point system
+        prod_score = (summary['Avg_Productivity_Pct'] / 100) * 5
+        comp_score = (summary['Avg_Compliance_Pct'] / 100) * 5
+        att_score = (summary['Avg_Attendance_Pct'] / 100) * 5
+        # Penalty calculation for LOP (assumes 5 days max penalty context)
+        lop_score = 5 - summary['Avg_LOP_Days'].clip(0, 5) 
+        
+        # Final Rating is a blended metric
+        summary['Final_Performance_Rating_out_of_5'] = (
+            summary['Avg_Star_Rating'] + prod_score + comp_score + att_score + lop_score
+        ) / 5
+        
+        # Format names for a beautiful dashboard look
+        summary = summary.rename(columns={
+            "Avg_Productivity_Pct": "Avg Productivity (%)",
+            "Avg_Compliance_Pct": "Avg Compliance (%)",
+            "Avg_Attendance_Pct": "Avg Attendance (%)",
+            "Avg_LOP_Days": "Avg LOP (Days)",
+            "Avg_Star_Rating": "Avg Star Rating",
+            "Final_Performance_Rating_out_of_5": "🏆 Final Balanced Score (1-5)"
+        })
+        
+        # Round the metrics for clean output
         for col in summary.columns[1:]:
             summary[col] = summary[col].round(2)
             
         return summary
     
-    # Create tabs for easy navigation
-    tab_tl, tab_am, tab_cm, tab_pod, tab_loc = st.tabs([
-        "👔 TL Wise", "👔 AM Wise", "👔 CM Wise", "🚀 POD Leader Wise", "📍 Location Wise"
+    # Create navigation tabs including Process and Final Rating integrations
+    tab_tl, tab_am, tab_cm, tab_pod, tab_loc, tab_proc = st.tabs([
+        "👔 TL Wise", "👔 AM Wise", "👔 CM Wise", "🚀 POD Leader Wise", "📍 Location Wise", "⚙️ Process Wise"
     ])
     
     with tab_tl:
-        st.subheader("Team Leader (TL) Aggregate Summary")
+        st.subheader("Team Leader (TL) Performance & Final Balanced Score")
         st.dataframe(get_aggregated_summary(mgmt_df, "TL"), use_container_width=True)
         
     with tab_am:
-        st.subheader("Assistant Manager (AM) Aggregate Summary")
+        st.subheader("Assistant Manager (AM) Performance & Final Balanced Score")
         st.dataframe(get_aggregated_summary(mgmt_df, "AM"), use_container_width=True)
         
     with tab_cm:
-        st.subheader("Collection Manager (CM) Aggregate Summary")
+        st.subheader("Collection Manager (CM) Performance & Final Balanced Score")
         st.dataframe(get_aggregated_summary(mgmt_df, "CM"), use_container_width=True)
         
     with tab_pod:
-        st.subheader("POD Leader Aggregate Summary")
+        st.subheader("POD Leader Performance & Final Balanced Score")
         if "POD_Leader" in mgmt_df.columns:
             st.dataframe(get_aggregated_summary(mgmt_df, "POD_Leader"), use_container_width=True)
         else:
             st.warning("POD_Leader column not found in data.")
             
     with tab_loc:
-        st.subheader("Center / Location Aggregate Summary")
+        st.subheader("Center / Location Performance & Final Balanced Score")
         st.dataframe(get_aggregated_summary(mgmt_df, "Center / Location"), use_container_width=True)
+        
+    with tab_proc:
+        st.subheader("Process Wise Performance & Final Balanced Score")
+        st.dataframe(get_aggregated_summary(mgmt_df, "Process"), use_container_width=True)
