@@ -203,74 +203,207 @@ st.markdown("---")
 
 st.subheader("🔍 Filters & Selection")
 
-filter_col1, filter_col2, filter_col3, filter_col4 = st.columns(4)
-
 # View Type Selection
-with filter_col1:
+view_col = st.columns(1)[0]
+with view_col:
     view_type = st.radio(
-        "View Type:",
+        "📊 Select View Type:",
         ["👤 Advisor View", "👥 Support Staff View"],
-        horizontal=False
+        horizontal=True
     )
 
+st.markdown("---")
+
 # Initialize variables
-process = "All"
-advisor = None
-staff_type = None
-selected_staff = None
 advisor_data = None
 team_df = None
 
+# ===================================================
 # ADVISOR VIEW FILTERS
-if view_type == "👤 Advisor View":
-    with filter_col2:
-        process_list = ["All"] + sorted(df["Process"].dropna().unique().tolist())
-        process = st.selectbox(
-            "Process:",
-            process_list,
-            key="proc_select"
-        )
-    
-    with filter_col3:
-        if process != "All":
-            filtered_df = df[df["Process"] == process]
-        else:
-            filtered_df = df.copy()
-        
-        advisor_list = sorted(filtered_df["Advisor Name"].dropna().unique().tolist())
-        advisor = st.selectbox(
-            "Advisor:",
-            advisor_list,
-            key="adv_select"
-        )
-        
-        advisor_data = filtered_df[filtered_df["Advisor Name"] == advisor].iloc[0]
+# ===================================================
 
-# SUPPORT STAFF VIEW FILTERS
-else:
-    with filter_col2:
-        staff_type = st.selectbox(
-            "Staff Category:",
-            ["TL (Team Lead)", "AM (Area Manager)", "CM (Center Manager)", "POD_Leader"],
-            key="staff_cat"
+if view_type == "👤 Advisor View":
+    
+    st.markdown("**Advisor View - Select Filters Below:**")
+    
+    adv_col1, adv_col2, adv_col3, adv_col4 = st.columns(4)
+    
+    # Filter 1: Process
+    with adv_col1:
+        process_list = ["All"] + sorted(df["Process"].dropna().unique().tolist())
+        selected_process = st.selectbox(
+            "🔹 Process:",
+            process_list,
+            key="adv_process"
         )
     
-    with filter_col3:
-        staff_column_map = {
-            "TL (Team Lead)": "TL",
-            "AM (Area Manager)": "AM",
-            "CM (Center Manager)": "CM",
-            "POD_Leader": "POD_Leader"
-        }
-        staff_column = staff_column_map[staff_type]
-        staff_list = sorted(df[staff_column].dropna().unique().tolist())
-        selected_staff = st.selectbox(
-            "Staff Member:",
-            staff_list,
-            key="staff_mem"
-        )
+    # Filter 2: Location
+    with adv_col2:
+        if selected_process != "All":
+            location_filtered = df[df["Process"] == selected_process]
+        else:
+            location_filtered = df.copy()
         
-        team_df = df[df[staff_column] == selected_staff].copy()
+        location_list = ["All"] + sorted(location_filtered["Center / Location"].dropna().unique().tolist())
+        selected_location = st.selectbox(
+            "🔹 Location:",
+            location_list,
+            key="adv_location"
+        )
+    
+    # Filter 3: Employee ID
+    with adv_col3:
+        if selected_process != "All":
+            emp_filtered = df[df["Process"] == selected_process]
+        else:
+            emp_filtered = df.copy()
+        
+        if selected_location != "All":
+            emp_filtered = emp_filtered[emp_filtered["Center / Location"] == selected_location]
+        
+        emp_list = ["All"] + sorted(emp_filtered["EMP Id"].dropna().unique().tolist())
+        selected_emp_id = st.selectbox(
+            "🔹 Employee ID:",
+            emp_list,
+            key="adv_emp_id"
+        )
+    
+    # Filter 4: Advisor Name
+    with adv_col4:
+        if selected_process != "All":
+            adv_filtered = df[df["Process"] == selected_process]
+        else:
+            adv_filtered = df.copy()
+        
+        if selected_location != "All":
+            adv_filtered = adv_filtered[adv_filtered["Center / Location"] == selected_location]
+        
+        if selected_emp_id != "All":
+            adv_filtered = adv_filtered[adv_filtered["EMP Id"] == selected_emp_id]
+        
+        advisor_list = sorted(adv_filtered["Advisor Name"].dropna().unique().tolist())
+        
+        if advisor_list:
+            selected_advisor = st.selectbox(
+                "🔹 Advisor Name:",
+                advisor_list,
+                key="adv_name"
+            )
+            
+            advisor_data = adv_filtered[adv_filtered["Advisor Name"] == selected_advisor].iloc[0]
+        else:
+            st.warning("⚠️ No advisors found with selected filters")
+
+# ===================================================
+# SUPPORT STAFF VIEW FILTERS
+# ===================================================
+
+else:  # Support Staff View
+    
+    st.markdown("**Support Staff View - Select Filters Below:**")
+    
+    staff_col1, staff_col2, staff_col3, staff_col4, staff_col5 = st.columns(5)
+    
+    # Filter 1: POD Leader
+    with staff_col1:
+        pod_list = ["All"] + sorted(df["POD_Leader"].dropna().unique().tolist())
+        selected_pod = st.selectbox(
+            "🔹 POD Leader:",
+            pod_list,
+            key="staff_pod"
+        )
+    
+    # Filter 2: Process
+    with staff_col2:
+        if selected_pod != "All":
+            process_filtered = df[df["POD_Leader"] == selected_pod]
+        else:
+            process_filtered = df.copy()
+        
+        process_list = ["All"] + sorted(process_filtered["Process"].dropna().unique().tolist())
+        selected_process = st.selectbox(
+            "🔹 Process:",
+            process_list,
+            key="staff_process"
+        )
+    
+    # Filter 3: Center Manager (CM)
+    with staff_col3:
+        if selected_pod != "All":
+            cm_filtered = df[df["POD_Leader"] == selected_pod]
+        else:
+            cm_filtered = df.copy()
+        
+        if selected_process != "All":
+            cm_filtered = cm_filtered[cm_filtered["Process"] == selected_process]
+        
+        cm_list = ["All"] + sorted(cm_filtered["CM"].dropna().unique().tolist())
+        selected_cm = st.selectbox(
+            "🔹 CM (Collection Manager):",
+            cm_list,
+            key="staff_cm"
+        )
+    
+    # Filter 4: Area Manager (AM)
+    with staff_col4:
+        if selected_pod != "All":
+            am_filtered = df[df["POD_Leader"] == selected_pod]
+        else:
+            am_filtered = df.copy()
+        
+        if selected_process != "All":
+            am_filtered = am_filtered[am_filtered["Process"] == selected_process]
+        
+        if selected_cm != "All":
+            am_filtered = am_filtered[am_filtered["CM"] == selected_cm]
+        
+        am_list = ["All"] + sorted(am_filtered["AM"].dropna().unique().tolist())
+        selected_am = st.selectbox(
+            "🔹 AM (Assistant Manager):",
+            am_list,
+            key="staff_am"
+        )
+    
+    # Filter 5: Team Leader (TL)
+    with staff_col5:
+        if selected_pod != "All":
+            tl_filtered = df[df["POD_Leader"] == selected_pod]
+        else:
+            tl_filtered = df.copy()
+        
+        if selected_process != "All":
+            tl_filtered = tl_filtered[tl_filtered["Process"] == selected_process]
+        
+        if selected_cm != "All":
+            tl_filtered = tl_filtered[tl_filtered["CM"] == selected_cm]
+        
+        if selected_am != "All":
+            tl_filtered = tl_filtered[tl_filtered["AM"] == selected_am]
+        
+        tl_list = ["All"] + sorted(tl_filtered["TL"].dropna().unique().tolist())
+        selected_tl = st.selectbox(
+            "🔹 Team Leader (TL):",
+            tl_list,
+            key="staff_tl"
+        )
+    
+    # Apply all filters to get team data
+    team_df = df.copy()
+    
+    if selected_pod != "All":
+        team_df = team_df[team_df["POD_Leader"] == selected_pod]
+    
+    if selected_process != "All":
+        team_df = team_df[team_df["Process"] == selected_process]
+    
+    if selected_cm != "All":
+        team_df = team_df[team_df["CM"] == selected_cm]
+    
+    if selected_am != "All":
+        team_df = team_df[team_df["AM"] == selected_am]
+    
+    if selected_tl != "All":
+        team_df = team_df[team_df["TL"] == selected_tl]
 
 st.markdown("---")
 
@@ -280,7 +413,7 @@ st.markdown("---")
 
 if view_type == "👤 Advisor View" and advisor_data is not None:
     
-    st.success(f"✅ Selected Advisor: **{advisor}**")
+    st.success(f"✅ Selected Advisor: **{selected_advisor}** (ID: {selected_emp_id}) | Location: **{selected_location}** | Process: **{selected_process}**")
     
     # ---------------------------------------------------
     # KPI Cards - Performance Summary
@@ -459,7 +592,21 @@ if view_type == "👤 Advisor View" and advisor_data is not None:
 
 elif view_type == "👥 Support Staff View" and team_df is not None and len(team_df) > 0:
     
-    st.success(f"✅ Showing {len(team_df)} advisors under **{selected_staff}**")
+    # Build filter summary
+    filter_summary = []
+    if selected_pod != "All":
+        filter_summary.append(f"POD: {selected_pod}")
+    if selected_process != "All":
+        filter_summary.append(f"Process: {selected_process}")
+    if selected_cm != "All":
+        filter_summary.append(f"CM: {selected_cm}")
+    if selected_am != "All":
+        filter_summary.append(f"AM: {selected_am}")
+    if selected_tl != "All":
+        filter_summary.append(f"TL: {selected_tl}")
+    
+    summary_text = " | ".join(filter_summary) if filter_summary else "All Staff"
+    st.success(f"✅ Showing {len(team_df)} advisors | {summary_text}")
     st.markdown("---")
     
     # ---------------------------------------------------
@@ -587,11 +734,28 @@ elif view_type == "👥 Support Staff View" and team_df is not None and len(team
     st.markdown("---")
     
     with st.expander("📄 Export Team Data"):
-        st.write(f"**Team Data for {selected_staff}**")
+        st.write(f"**Team Data Export**")
         csv = team_df.to_csv(index=False)
+        
+        # Create meaningful filename
+        filename_parts = []
+        if selected_pod != "All":
+            filename_parts.append(selected_pod.replace(" ", "_"))
+        if selected_process != "All":
+            filename_parts.append(selected_process.replace(" ", "_"))
+        if selected_cm != "All":
+            filename_parts.append(f"CM_{selected_cm.replace(' ', '_')}")
+        if selected_am != "All":
+            filename_parts.append(f"AM_{selected_am.replace(' ', '_')}")
+        if selected_tl != "All":
+            filename_parts.append(f"TL_{selected_tl.replace(' ', '_')}")
+        
+        filename = "_".join(filename_parts) if filename_parts else "team_data"
+        filename += ".csv"
+        
         st.download_button(
             label="⬇️ Download Team Data (CSV)",
             data=csv,
-            file_name=f"{selected_staff}_team_data.csv",
+            file_name=filename,
             mime="text/csv"
         )
