@@ -23,7 +23,7 @@ border:1px solid #5058d4;
 ">
 
 <h1 style="color:white;margin-bottom:0;">
-📊 DPDzero Operations Performance Dashboard
+📊 DPDzero Operations Productivity Dashboard
 </h1>
 
 <p style="color:#B8BCFF;">
