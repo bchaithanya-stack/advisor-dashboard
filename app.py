@@ -208,7 +208,7 @@ view_col = st.columns(1)[0]
 with view_col:
     view_type = st.radio(
         "📊 Select View Type:",
-        ["👤 Advisor View", "👥 Support Staff View"],
+        ["👤 Advisor View", "👥 Support Staff View", "📈 Overall View"],
         horizontal=True
     )
 
@@ -302,23 +302,40 @@ else:  # Support Staff View
     
     st.markdown("**Support Staff View - Select Filters Below:**")
     
-    staff_col1, staff_col2, staff_col3, staff_col4, staff_col5 = st.columns(5)
+    staff_col1, staff_col2, staff_col3, staff_col4, staff_col5, staff_col6 = st.columns(6)
     
-    # Filter 1: POD Leader
+    # Filter 1: Location
     with staff_col1:
-        pod_list = ["All"] + sorted(df["POD_Leader"].dropna().unique().tolist())
+        location_list = ["All"] + sorted(df["Center / Location"].dropna().unique().tolist())
+        selected_location = st.selectbox(
+            "🔹 Location:",
+            location_list,
+            key="staff_location"
+        )
+    
+    # Filter 2: POD Leader
+    with staff_col2:
+        if selected_location != "All":
+            pod_filtered = df[df["Center / Location"] == selected_location]
+        else:
+            pod_filtered = df.copy()
+        
+        pod_list = ["All"] + sorted(pod_filtered["POD_Leader"].dropna().unique().tolist())
         selected_pod = st.selectbox(
             "🔹 POD Leader:",
             pod_list,
             key="staff_pod"
         )
     
-    # Filter 2: Process
-    with staff_col2:
-        if selected_pod != "All":
-            process_filtered = df[df["POD_Leader"] == selected_pod]
+    # Filter 3: Process
+    with staff_col3:
+        if selected_location != "All":
+            process_filtered = df[df["Center / Location"] == selected_location]
         else:
             process_filtered = df.copy()
+        
+        if selected_pod != "All":
+            process_filtered = process_filtered[process_filtered["POD_Leader"] == selected_pod]
         
         process_list = ["All"] + sorted(process_filtered["Process"].dropna().unique().tolist())
         selected_process = st.selectbox(
@@ -327,12 +344,15 @@ else:  # Support Staff View
             key="staff_process"
         )
     
-    # Filter 3: Center Manager (CM)
-    with staff_col3:
-        if selected_pod != "All":
-            cm_filtered = df[df["POD_Leader"] == selected_pod]
+    # Filter 4: Center Manager (CM)
+    with staff_col4:
+        if selected_location != "All":
+            cm_filtered = df[df["Center / Location"] == selected_location]
         else:
             cm_filtered = df.copy()
+        
+        if selected_pod != "All":
+            cm_filtered = cm_filtered[cm_filtered["POD_Leader"] == selected_pod]
         
         if selected_process != "All":
             cm_filtered = cm_filtered[cm_filtered["Process"] == selected_process]
@@ -344,12 +364,15 @@ else:  # Support Staff View
             key="staff_cm"
         )
     
-    # Filter 4: Area Manager (AM)
-    with staff_col4:
-        if selected_pod != "All":
-            am_filtered = df[df["POD_Leader"] == selected_pod]
+    # Filter 5: Area Manager (AM)
+    with staff_col5:
+        if selected_location != "All":
+            am_filtered = df[df["Center / Location"] == selected_location]
         else:
             am_filtered = df.copy()
+        
+        if selected_pod != "All":
+            am_filtered = am_filtered[am_filtered["POD_Leader"] == selected_pod]
         
         if selected_process != "All":
             am_filtered = am_filtered[am_filtered["Process"] == selected_process]
@@ -364,12 +387,15 @@ else:  # Support Staff View
             key="staff_am"
         )
     
-    # Filter 5: Team Leader (TL)
-    with staff_col5:
-        if selected_pod != "All":
-            tl_filtered = df[df["POD_Leader"] == selected_pod]
+    # Filter 6: Team Leader (TL)
+    with staff_col6:
+        if selected_location != "All":
+            tl_filtered = df[df["Center / Location"] == selected_location]
         else:
             tl_filtered = df.copy()
+        
+        if selected_pod != "All":
+            tl_filtered = tl_filtered[tl_filtered["POD_Leader"] == selected_pod]
         
         if selected_process != "All":
             tl_filtered = tl_filtered[tl_filtered["Process"] == selected_process]
@@ -390,6 +416,9 @@ else:  # Support Staff View
     # Apply all filters to get team data
     team_df = df.copy()
     
+    if selected_location != "All":
+        team_df = team_df[team_df["Center / Location"] == selected_location]
+    
     if selected_pod != "All":
         team_df = team_df[team_df["POD_Leader"] == selected_pod]
     
@@ -404,6 +433,85 @@ else:  # Support Staff View
     
     if selected_tl != "All":
         team_df = team_df[team_df["TL"] == selected_tl]
+
+# ===================================================
+# OVERALL VIEW FILTERS
+# ===================================================
+
+overall_df = None
+
+if view_type == "📈 Overall View":
+    
+    st.markdown("**Overall View - Top 10% Advisors by Star Rating**")
+    
+    overall_col1, overall_col2, overall_col3 = st.columns(3)
+    
+    # Filter 1: Location
+    with overall_col1:
+        location_list = ["All"] + sorted(df["Center / Location"].dropna().unique().tolist())
+        selected_overall_location = st.selectbox(
+            "🔹 Location:",
+            location_list,
+            key="overall_location"
+        )
+    
+    # Filter 2: POD Leader
+    with overall_col2:
+        if selected_overall_location != "All":
+            overall_pod_filtered = df[df["Center / Location"] == selected_overall_location]
+        else:
+            overall_pod_filtered = df.copy()
+        
+        overall_pod_list = ["All"] + sorted(overall_pod_filtered["POD_Leader"].dropna().unique().tolist())
+        selected_overall_pod = st.selectbox(
+            "🔹 POD Leader:",
+            overall_pod_list,
+            key="overall_pod"
+        )
+    
+    # Filter 3: Center Manager (CM)
+    with overall_col3:
+        if selected_overall_location != "All":
+            overall_cm_filtered = df[df["Center / Location"] == selected_overall_location]
+        else:
+            overall_cm_filtered = df.copy()
+        
+        if selected_overall_pod != "All":
+            overall_cm_filtered = overall_cm_filtered[overall_cm_filtered["POD_Leader"] == selected_overall_pod]
+        
+        overall_cm_list = ["All"] + sorted(overall_cm_filtered["CM"].dropna().unique().tolist())
+        selected_overall_cm = st.selectbox(
+            "🔹 CM (Collection Manager):",
+            overall_cm_list,
+            key="overall_cm"
+        )
+    
+    # Apply filters to get base data
+    overall_df = df.copy()
+    
+    if selected_overall_location != "All":
+        overall_df = overall_df[overall_df["Center / Location"] == selected_overall_location]
+    
+    if selected_overall_pod != "All":
+        overall_df = overall_df[overall_df["POD_Leader"] == selected_overall_pod]
+    
+    if selected_overall_cm != "All":
+        overall_df = overall_df[overall_df["CM"] == selected_overall_cm]
+    
+    # Calculate top 10% per process
+    if len(overall_df) > 0:
+        top_10_percent = []
+        
+        for process in overall_df["Process"].unique():
+            process_data = overall_df[overall_df["Process"] == process].copy()
+            count = len(process_data)
+            top_count = max(1, int(count * 0.1))  # Calculate 10%, minimum 1
+            
+            top_process = process_data.nlargest(top_count, "Star Rating (1-5)")
+            top_10_percent.append(top_process)
+        
+        overall_df = pd.concat(top_10_percent, ignore_index=True)
+        overall_df = overall_df.sort_values("Star Rating (1-5)", ascending=False)
 
 st.markdown("---")
 
