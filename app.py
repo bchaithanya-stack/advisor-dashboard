@@ -27,7 +27,7 @@ border:1px solid #5058d4;
 </h1>
 
 <p style="color:#B8BCFF;">
-Real Time Performance Analytics (Google Sheets)
+Real Time Performance Analytics
 </p>
 
 </div>
