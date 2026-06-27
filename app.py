@@ -1,7 +1,8 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import os
+import gspread
+from google.oauth2.service_account import Credentials
 
 # ---------------------------------------------------
 # Page Configuration
@@ -26,7 +27,7 @@ border:1px solid #5058d4;
 </h1>
 
 <p style="color:#B8BCFF;">
-Real Time Performance Analytics
+Real Time Performance Analytics (Google Sheets)
 </p>
 
 </div>
@@ -125,47 +126,67 @@ h2,h3{
 """, unsafe_allow_html=True)
 
 # ---------------------------------------------------
-# Load Data with Error Handling
+# Load Google Sheet with Cache
 # ---------------------------------------------------
 
-@st.cache_data
-def load_data():
-    """Load and validate data from Excel file"""
+@st.cache_data(ttl=10)
+def load_data_from_google_sheets():
+    """Load data from Google Sheets with authentication"""
     try:
-        if not os.path.exists("Advisor_Data.xlsx"):
-            st.error("❌ Error: 'Advisor_Data.xlsx' file not found. Please ensure the file is in the working directory.")
-            st.stop()
-        
-        df = pd.read_excel("Advisor_Data.xlsx")
-        
-        # Validate required columns
-        required_columns = [
-            "Advisor Name", "Process", "EMP Id", "Email Id", "Center / Location",
-            "Status", "TL", "AM", "CM", "Star Rating (1-5)", "Process Rank",
-            "Productivity (%)", "Compliance (%) QA", "Attendance (%)", "Total LOP's Days",
-            "Attendance Score (1-5)", "LOP Score (1-5)", "Performance Score (1-5)",
-            "Productiviy Score (1-5)", "Compliance Score (1-5)"
+        scope = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
         ]
-        
-        missing_columns = [col for col in required_columns if col not in df.columns]
-        
-        if missing_columns:
-            st.error(f"❌ Missing columns in data: {', '.join(missing_columns)}")
+
+        # Get credentials from Streamlit secrets
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=scope,
+        )
+
+        client = gspread.authorize(creds)
+
+        # Open the Google Sheet by key
+        sheet = client.open_by_key(
+            "1CP0uVJXXiBxH4qXklkvh1q0xkocYg2mwMSf0VYXumYM"
+        )
+
+        worksheet = sheet.sheet1
+
+        df = pd.DataFrame(worksheet.get_all_records())
+
+        if df.empty:
+            st.error("❌ No data found in the Google Sheet. Check the sheet ID and sharing permissions.")
             st.stop()
-        
+
         return df
-    
+
     except Exception as e:
-        st.error(f"❌ Error loading data: {str(e)}")
+        st.error(f"❌ Error loading data from Google Sheets: {str(e)}")
         st.stop()
 
-df = load_data()
+# ---------------------------------------------------
+# Manual Refresh Button
+# ---------------------------------------------------
+
+refresh_col, _ = st.columns([1, 5])
+with refresh_col:
+    if st.button("🔄 Refresh Data"):
+        st.cache_data.clear()
+        st.success("✅ Data refreshed successfully!")
+        st.rerun()
+
+# ---------------------------------------------------
+# Fetch Data
+# ---------------------------------------------------
+
+df = load_data_from_google_sheets()
 
 # ---------------------------------------------------
 # Sidebar Filters
 # ---------------------------------------------------
 
-st.sidebar.header("Filters")
+st.sidebar.header("🔍 Filters")
 
 # Process Filter
 process_list = ["All"] + sorted(df["Process"].dropna().unique().tolist())
@@ -185,7 +206,7 @@ if len(filtered_df) == 0:
     st.warning("⚠️ No advisors found for the selected process.")
     st.stop()
 
-advisor_list = sorted(filtered_df["Advisor Name"].unique().tolist())
+advisor_list = sorted(filtered_df["Advisor Name"].dropna().unique().tolist())
 advisor = st.sidebar.selectbox(
     "Select Advisor",
     advisor_list
@@ -195,11 +216,11 @@ advisor = st.sidebar.selectbox(
 advisor_data = filtered_df[filtered_df["Advisor Name"] == advisor].iloc[0]
 
 # ---------------------------------------------------
-# Helper Function for KPI Cards
+# Helper Function for Custom KPI Cards
 # ---------------------------------------------------
 
 def card(title, value):
-    """Display a KPI card with fixed dimensions"""
+    """Display a custom KPI card with fixed dimensions"""
     st.markdown(f"""
     <div style="
     background:#17194c;
@@ -232,7 +253,7 @@ def card(title, value):
 st.success(f"Selected Advisor: {advisor}")
 
 # ---------------------------------------------------
-# KPI Cards
+# KPI Cards - Performance Summary
 # ---------------------------------------------------
 
 st.subheader("📈 Performance Summary")
@@ -282,7 +303,7 @@ with right:
 st.markdown("---")
 
 # ---------------------------------------------------
-# KPI Progress
+# KPI Progress Scorecard
 # ---------------------------------------------------
 
 st.subheader("⭐ KPI Scorecard")
@@ -359,62 +380,71 @@ st.plotly_chart(fig, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------
-# Strengths
+# Strengths & Improvements
 # ---------------------------------------------------
 
-st.subheader("💪 Strengths")
+col1, col2 = st.columns(2)
 
-strengths = []
+with col1:
+    st.subheader("💪 Strengths")
 
-if advisor_data["Attendance Score (1-5)"] >= 4:
-    strengths.append("✅ Excellent Attendance")
+    strengths = []
 
-if advisor_data["Productiviy Score (1-5)"] >= 4:
-    strengths.append("✅ High Productivity")
+    if advisor_data["Attendance Score (1-5)"] >= 4:
+        strengths.append("✅ Excellent Attendance")
 
-if advisor_data["Compliance Score (1-5)"] >= 4:
-    strengths.append("✅ Good Compliance")
+    if advisor_data["Productiviy Score (1-5)"] >= 4:
+        strengths.append("✅ High Productivity")
 
-if advisor_data["LOP Score (1-5)"] == 5:
-    strengths.append("✅ Zero LOP")
+    if advisor_data["Compliance Score (1-5)"] >= 4:
+        strengths.append("✅ Good Compliance")
 
-if len(strengths) == 0:
-    st.warning("No major strengths identified.")
-else:
-    for strength in strengths:
-        st.write(strength)
+    if advisor_data["LOP Score (1-5)"] == 5:
+        strengths.append("✅ Zero LOP")
 
-# ---------------------------------------------------
-# Improvement Areas
-# ---------------------------------------------------
+    if len(strengths) == 0:
+        st.warning("⚠️ No major strengths identified.")
+    else:
+        for strength in strengths:
+            st.write(strength)
 
-st.subheader("🎯 Improvement Areas")
+with col2:
+    st.subheader("🎯 Improvement Areas")
 
-improvements = []
+    improvements = []
 
-if advisor_data["Attendance Score (1-5)"] < 4:
-    improvements.append("Improve Attendance")
+    if advisor_data["Attendance Score (1-5)"] < 4:
+        improvements.append("Improve Attendance")
 
-if advisor_data["Productiviy Score (1-5)"] < 4:
-    improvements.append("Increase Productivity")
+    if advisor_data["Productiviy Score (1-5)"] < 4:
+        improvements.append("Increase Productivity")
 
-if advisor_data["Compliance Score (1-5)"] < 4:
-    improvements.append("Improve Compliance")
+    if advisor_data["Compliance Score (1-5)"] < 4:
+        improvements.append("Improve Compliance")
 
-if advisor_data["Performance Score (1-5)"] < 4:
-    improvements.append("Increase Performance")
+    if advisor_data["Performance Score (1-5)"] < 4:
+        improvements.append("Increase Performance")
 
-if len(improvements) == 0:
-    st.success("✅ Excellent Performance! No improvement areas identified.")
-else:
-    for improvement in improvements:
-        st.write("🔸", improvement)
+    if len(improvements) == 0:
+        st.success("✅ Excellent Performance! No improvement areas identified.")
+    else:
+        for improvement in improvements:
+            st.write("🔸", improvement)
 
 st.markdown("---")
 
 # ---------------------------------------------------
-# Raw Data
+# Raw Data View
 # ---------------------------------------------------
 
 with st.expander("📄 View Complete Advisor Data"):
     st.dataframe(advisor_data.to_frame())
+
+# ---------------------------------------------------
+# Debug Section (Optional - Remove in Production)
+# ---------------------------------------------------
+
+with st.expander("🔧 Debug Information"):
+    st.write("**Data Shape:**", df.shape)
+    st.write("**Columns in Sheet:**", list(df.columns))
+    st.dataframe(df.head())
