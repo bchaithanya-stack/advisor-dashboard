@@ -148,9 +148,10 @@ st.subheader("🔍 Filters & Selection")
 
 view_col = st.columns(1)[0]
 with view_col:
+    # ADDED THE NEW MANAGEMENT VIEW HERE
     view_type = st.radio(
         "📊 Select View Type:",
-        ["👤 Advisor View", "👥 Support Staff View", "📈 Overall View"],
+        ["👤 Advisor View", "👥 Support Staff View", "📈 Overall View", "🏢 Management Summary"],
         horizontal=True
     )
 
@@ -160,6 +161,7 @@ st.markdown("---")
 advisor_data = None
 team_df = None
 overall_df = None
+mgmt_df = None
 
 # ===================================================
 # ADVISOR VIEW FILTERS
@@ -199,7 +201,7 @@ if view_type == "👤 Advisor View":
 # ===================================================
 # SUPPORT STAFF VIEW FILTERS
 # ===================================================
-elif view_type == "👥 Support Staff View":  # CHANGED FROM `else:` to fix the bug
+elif view_type == "👥 Support Staff View":  
     
     st.markdown("**Support Staff View - Select Filters Below:**")
     staff_col1, staff_col2, staff_col3, staff_col4, staff_col5, staff_col6 = st.columns(6)
@@ -290,6 +292,27 @@ elif view_type == "📈 Overall View":
         
         overall_df = pd.concat(top_10_percent, ignore_index=True)
         overall_df = overall_df.sort_values("Star Rating (1-5)", ascending=False)
+
+# ===================================================
+# MANAGEMENT SUMMARY VIEW FILTERS (NEW)
+# ===================================================
+elif view_type == "🏢 Management Summary":
+    
+    st.markdown("**Management Summary - Select Filters Below:**")
+    mgmt_col1, mgmt_col2 = st.columns(2)
+    
+    with mgmt_col1:
+        location_list = ["All"] + sorted(df["Center / Location"].dropna().unique().tolist())
+        selected_mgmt_location = st.selectbox("🔹 Location:", location_list, key="mgmt_location")
+        
+    with mgmt_col2:
+        mgmt_pod_filtered = df[df["Center / Location"] == selected_mgmt_location] if selected_mgmt_location != "All" else df.copy()
+        pod_list = ["All"] + sorted(mgmt_pod_filtered["POD_Leader"].dropna().unique().tolist())
+        selected_mgmt_pod = st.selectbox("🔹 POD Leader:", pod_list, key="mgmt_pod")
+        
+    mgmt_df = df.copy()
+    if selected_mgmt_location != "All": mgmt_df = mgmt_df[mgmt_df["Center / Location"] == selected_mgmt_location]
+    if selected_mgmt_pod != "All": mgmt_df = mgmt_df[mgmt_df["POD_Leader"] == selected_mgmt_pod]
 
 st.markdown("---")
 
@@ -458,7 +481,7 @@ elif view_type == "👥 Support Staff View" and team_df is not None and len(team
         st.download_button(label="⬇️ Download Team Data (CSV)", data=team_df.to_csv(index=False), file_name="team_data.csv", mime="text/csv")
 
 # ===================================================
-# OVERALL VIEW CONTENT (THIS WAS MISSING PREVIOUSLY)
+# OVERALL VIEW CONTENT
 # ===================================================
 elif view_type == "📈 Overall View" and overall_df is not None and len(overall_df) > 0:
     
@@ -466,7 +489,6 @@ elif view_type == "📈 Overall View" and overall_df is not None and len(overall
     
     st.subheader("🏆 Top Performers Details")
     
-    # Selecting the best columns to summarize top performers
     overall_display_cols = [
         "Advisor Name", "Process", "Center / Location", "POD_Leader", "CM",
         "Star Rating (1-5)", "Productivity (%)", "Compliance (%) QA", "Attendance (%)"
@@ -474,7 +496,6 @@ elif view_type == "📈 Overall View" and overall_df is not None and len(overall
     
     available_overall_cols = [c for c in overall_display_cols if c in overall_df.columns]
     
-    # Display the dataframe cleanly
     st.dataframe(overall_df[available_overall_cols], use_container_width=True)
     
     st.markdown("---")
@@ -488,3 +509,58 @@ elif view_type == "📈 Overall View" and overall_df is not None and len(overall
             file_name="overall_top_10_percent_advisors.csv",
             mime="text/csv"
         )
+
+# ===================================================
+# MANAGEMENT SUMMARY VIEW CONTENT (NEW)
+# ===================================================
+elif view_type == "🏢 Management Summary" and mgmt_df is not None and len(mgmt_df) > 0:
+    
+    st.success(f"✅ Showing Management Summaries | Location: **{selected_mgmt_location}** | POD Leader: **{selected_mgmt_pod}**")
+    st.markdown("---")
+    
+    # Helper function to generate aggregate tables
+    def get_aggregated_summary(df, group_by_col):
+        if group_by_col not in df.columns:
+            return pd.DataFrame()
+            
+        summary = df.groupby(group_by_col).agg(
+            Number_of_Advisors=('EMP Id', 'count'),
+            Avg_Star_Rating=('Star Rating (1-5)', 'mean'),
+            Avg_Productivity=('Productivity (%)', 'mean'),
+            Avg_Compliance=('Compliance (%) QA', 'mean'),
+            Avg_Attendance=('Attendance (%)', 'mean')
+        ).reset_index()
+        
+        # Round the metrics for a cleaner look
+        for col in summary.columns[1:]:
+            summary[col] = summary[col].round(2)
+            
+        return summary
+    
+    # Create tabs for easy navigation
+    tab_tl, tab_am, tab_cm, tab_pod, tab_loc = st.tabs([
+        "👔 TL Wise", "👔 AM Wise", "👔 CM Wise", "🚀 POD Leader Wise", "📍 Location Wise"
+    ])
+    
+    with tab_tl:
+        st.subheader("Team Leader (TL) Aggregate Summary")
+        st.dataframe(get_aggregated_summary(mgmt_df, "TL"), use_container_width=True)
+        
+    with tab_am:
+        st.subheader("Assistant Manager (AM) Aggregate Summary")
+        st.dataframe(get_aggregated_summary(mgmt_df, "AM"), use_container_width=True)
+        
+    with tab_cm:
+        st.subheader("Collection Manager (CM) Aggregate Summary")
+        st.dataframe(get_aggregated_summary(mgmt_df, "CM"), use_container_width=True)
+        
+    with tab_pod:
+        st.subheader("POD Leader Aggregate Summary")
+        if "POD_Leader" in mgmt_df.columns:
+            st.dataframe(get_aggregated_summary(mgmt_df, "POD_Leader"), use_container_width=True)
+        else:
+            st.warning("POD_Leader column not found in data.")
+            
+    with tab_loc:
+        st.subheader("Center / Location Aggregate Summary")
+        st.dataframe(get_aggregated_summary(mgmt_df, "Center / Location"), use_container_width=True)
