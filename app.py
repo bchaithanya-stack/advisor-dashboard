@@ -208,11 +208,16 @@ def card(title, value):
     border:1px solid #545eff;
     text-align:center;
     box-shadow:0px 0px 15px rgba(120,120,255,.2);
+    min-height:180px;
+    display:flex;
+    flex-direction:column;
+    justify-content:center;
+    align-items:center;
     ">
-    <p style="font-size:14px;color:#9da2ff;">
+    <p style="font-size:14px;color:#9da2ff;margin:0;">
     {title}
     </p>
-    <h1 style="color:white;">
+    <h1 style="color:white;margin:10px 0 0 0;">
     {value}
     </h1>
     </div>
