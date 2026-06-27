@@ -28,7 +28,7 @@ border:1px solid #5058d4;
 </h1>
 
 <p style="color:#B8BCFF;">
-Real Time Performance Analytics
+Real Time Performance Analytics (Google Sheets)
 </p>
 
 </div>
@@ -197,6 +197,13 @@ with refresh_col:
 df = load_data_from_google_sheets()
 
 # ---------------------------------------------------
+# Initialize Session State for Filters
+# ---------------------------------------------------
+
+if "tab_selection" not in st.session_state:
+    st.session_state.tab_selection = 0
+
+# ---------------------------------------------------
 # Helper Function for Custom KPI Cards
 # ---------------------------------------------------
 
@@ -227,6 +234,33 @@ def card(title, value):
     </div>
     """, unsafe_allow_html=True)
 
+st.markdown("---")
+
+# ---------------------------------------------------
+# Sidebar Instructions
+# ---------------------------------------------------
+
+st.sidebar.markdown("""
+---
+### 📌 **FILTER INSTRUCTIONS**
+
+#### **👤 Advisor View Tab:**
+1. Select a **Process** (All or specific)
+2. Select an **Advisor** from dropdown
+3. View individual performance details
+
+#### **👥 Support Staff View Tab:**
+1. Select a **Staff Category** 
+   - TL (Team Lead)
+   - AM (Area Manager)  
+   - CM (Center Manager)
+   - POD Leader
+2. Select the specific **Staff Member**
+3. View entire team metrics
+
+---
+""")
+
 # ---------------------------------------------------
 # Create Tabs
 # ---------------------------------------------------
@@ -245,7 +279,9 @@ with tab1:
     # Sidebar Filters - Advisor View
     # ---------------------------------------------------
     
-    st.sidebar.header("🔍 Advisor Filters")
+    st.sidebar.markdown("---")
+    st.sidebar.header("🔍 **ADVISOR FILTERS**")
+    st.sidebar.markdown("---")
     
     # Process Filter
     process_list = ["All"] + sorted(df["Process"].dropna().unique().tolist())
@@ -482,7 +518,9 @@ with tab2:
     # Sidebar Filters - Support Staff View
     # ---------------------------------------------------
     
-    st.sidebar.header("🔍 Support Staff Filters")
+    st.sidebar.markdown("---")
+    st.sidebar.header("🔍 **SUPPORT STAFF FILTERS**")
+    st.sidebar.markdown("---")
     
     # Staff Type Selection
     staff_type = st.sidebar.selectbox(
