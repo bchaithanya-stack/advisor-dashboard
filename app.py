@@ -141,6 +141,24 @@ def load_data_from_google_sheets():
             st.error("❌ No data found in the Google Sheet.")
             st.stop()
 
+        # ---------------------------------------------------
+        # DATA CLEANING & TYPE CONVERSION
+        # ---------------------------------------------------
+        # Define columns that MUST be numeric for math, sorting, and charts
+        numeric_cols = [
+            "Star Rating (1-5)", "Process Rank", "Productivity (%)", 
+            "Compliance (%) QA", "Attendance (%)", "Total LOP's Days",
+            "Attendance Score (1-5)", "LOP Score (1-5)", "Performance Score (1-5)", 
+            "Productiviy Score (1-5)", "Compliance Score (1-5)"
+        ]
+        
+        for col in numeric_cols:
+            if col in df.columns:
+                # Force conversion to string, strip out '%' or whitespace, and parse to numeric numbers
+                # Invalid or empty strings are safely converted to NaN (Not a Number)
+                df[col] = df[col].astype(str).str.replace('%', '', regex=False).str.strip()
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+
         return df
 
     except Exception as e:
@@ -507,6 +525,7 @@ if view_type == "📈 Overall View":
             count = len(process_data)
             top_count = max(1, int(count * 0.1))  # Calculate 10%, minimum 1
             
+            # This line will now execute perfectly because "Star Rating (1-5)" is numeric
             top_process = process_data.nlargest(top_count, "Star Rating (1-5)")
             top_10_percent.append(top_process)
         
