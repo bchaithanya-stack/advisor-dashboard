@@ -23,11 +23,11 @@ border:1px solid #5058d4;
 ">
 
 <h1 style="color:white;margin-bottom:0;">
-📊 Advisor Performance Dashboard
+📊 DPDzero Operations Performance Dashboard
 </h1>
 
 <p style="color:#B8BCFF;">
-Real Time Performance Analytics (Google Sheets)
+Real Time Performance Analytics
 </p>
 
 </div>
