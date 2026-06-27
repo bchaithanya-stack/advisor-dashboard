@@ -199,7 +199,7 @@ advisor_data = filtered_df[filtered_df["Advisor Name"] == advisor].iloc[0]
 # ---------------------------------------------------
 
 def card(title, value):
-    """Display a KPI card"""
+    """Display a KPI card with fixed dimensions"""
     st.markdown(f"""
     <div style="
     background:#17194c;
@@ -208,16 +208,18 @@ def card(title, value):
     border:1px solid #545eff;
     text-align:center;
     box-shadow:0px 0px 15px rgba(120,120,255,.2);
-    min-height:180px;
+    height:160px;
+    width:100%;
     display:flex;
     flex-direction:column;
     justify-content:center;
     align-items:center;
+    box-sizing:border-box;
     ">
-    <p style="font-size:14px;color:#9da2ff;margin:0;">
+    <p style="font-size:14px;color:#9da2ff;margin:0;padding:0;">
     {title}
     </p>
-    <h1 style="color:white;margin:10px 0 0 0;">
+    <h1 style="color:white;margin:8px 0 0 0;padding:0;font-size:48px;">
     {value}
     </h1>
     </div>
