@@ -21,26 +21,45 @@ padding:25px;
 border-radius:18px;
 border:1px solid #5058d4;
 ">
-<h1 style="color:white;margin-bottom:0;">📊 Advisor Performance Dashboard</h1>
-<p style="color:#B8BCFF;">Real Time Performance Analytics (Google Sheets)</p>
+
+<h1 style="color:white;margin-bottom:0;">
+📊 Advisor Performance Dashboard
+</h1>
+
+<p style="color:#B8BCFF;">
+Real Time Performance Analytics
+</p>
+
 </div>
 """, unsafe_allow_html=True)
 
 st.markdown("""
 <style>
+/* Main App */
 .stApp{ background: linear-gradient(180deg,#090a2f,#070726); color:white; }
+/* Hide default Streamlit menu */
 #MainMenu {visibility:hidden;}
 footer {visibility:hidden;}
 header {visibility:hidden;}
+/* Sidebar */
 section[data-testid="stSidebar"]{ background:#10133d; border-right:1px solid #34396b; }
+/* Cards */
+div[data-testid="metric-container"]{ background:#1a1d53; border:1px solid #4b52b6; padding:18px; border-radius:15px; box-shadow:0px 0px 15px rgba(97,91,255,.25); }
+div[data-testid="metric-container"]:hover{ transform:translateY(-4px); transition:.3s; }
+/* Buttons */
 .stButton>button{ background:#5b5ef7; color:white; border:none; border-radius:10px; padding:10px; font-weight:600; }
 .stButton>button:hover{ background:#7b7eff; }
+/* Select Box */
 .stSelectbox div[data-baseweb="select"]{ background:#17194c; color:white; }
+/* Dataframe */
 [data-testid="stDataFrame"]{ background:#151846; border-radius:15px; }
+/* Expanders */
 .streamlit-expanderHeader{ background:#1d2057; border-radius:10px; }
+/* Progress bar */
 .stProgress > div > div{ background:#7f63ff; }
+/* Headers */
 h1{ color:white; font-weight:700; }
-h2,h3,h4{ color:#cfd2ff; }
+h2,h3{ color:#cfd2ff; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -53,8 +72,14 @@ st.markdown("---")
 @st.cache_data(ttl=10)
 def load_data_from_google_sheets():
     try:
-        scope = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
-        creds = Credentials.from_service_account_info(st.secrets["gcp_service_account"], scopes=scope)
+        scope = [
+            "https://www.googleapis.com/auth/spreadsheets",
+            "https://www.googleapis.com/auth/drive"
+        ]
+        creds = Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=scope,
+        )
         client = gspread.authorize(creds)
         sheet = client.open_by_key("1CP0uVJXXiBxH4qXklkvh1q0xkocYg2mwMSf0VYXumYM")
         worksheet = sheet.sheet1
@@ -64,6 +89,7 @@ def load_data_from_google_sheets():
             st.error("❌ No data found in the Google Sheet.")
             st.stop()
 
+        # Added new columns here for text-to-numeric type safety
         numeric_cols = [
             "Star Rating (1-5)", "Process Rank", "Productivity (%)", 
             "Compliance (%) QA", "Attendance (%)", "Performance (%)", "Total LOP's Days",
@@ -83,200 +109,498 @@ def load_data_from_google_sheets():
         st.stop()
 
 # ---------------------------------------------------
-# Fetch Data & Helper Functions
+# Fetch Data
 # ---------------------------------------------------
 
 df = load_data_from_google_sheets()
 
+# ---------------------------------------------------
+# Helper Function for KPI Cards
+# ---------------------------------------------------
+
 def card(title, value):
     st.markdown(f"""
     <div style="
-    background:#17194c; padding:20px; border-radius:18px; border:1px solid #545eff; text-align:center; box-shadow:0px 0px 15px rgba(120,120,255,.2); height:140px; width:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; box-sizing:border-box; margin-bottom:15px;
+    background:#17194c; padding:20px; border-radius:18px; border:1px solid #545eff; text-align:center; box-shadow:0px 0px 15px rgba(120,120,255,.2); height:160px; width:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; box-sizing:border-box;
     ">
     <p style="font-size:14px;color:#9da2ff;margin:0;padding:0;">{title}</p>
-    <h1 style="color:white;margin:8px 0 0 0;padding:0;font-size:32px;">{value}</h1>
+    <h1 style="color:white;margin:8px 0 0 0;padding:0;font-size:36px;">{value}</h1>
     </div>
     """, unsafe_allow_html=True)
 
 # ---------------------------------------------------
-# Top Bar
+# Top Bar with Refresh Button
 # ---------------------------------------------------
 
 col_space, col_refresh = st.columns([5, 1])
 with col_refresh:
-    if st.button("🔄 Refresh Data", use_container_width=True):
+    if st.button("🔄 Refresh", use_container_width=True, key="refresh_btn"):
         st.cache_data.clear()
+        st.success("✅ Data refreshed!")
         st.rerun()
 
 st.markdown("---")
 
+# ---------------------------------------------------
+# FILTER SECTION - MAIN CONTENT AREA
+# ---------------------------------------------------
+
 st.subheader("🔍 Filters & Selection")
-view_type = st.radio(
-    "Select View Type:",
-    ["👤 Advisor View", "👥 Support Staff View", "📈 Overall View", "🏢 Management Summary"],
-    horizontal=True,
-    label_visibility="collapsed"
-)
+
+view_col = st.columns(1)[0]
+with view_col:
+    view_type = st.radio(
+        "📊 Select View Type:",
+        ["👤 Advisor View", "👥 Support Staff View", "📈 Overall View", "🏢 Management Summary"],
+        horizontal=True
+    )
+
 st.markdown("---")
 
+# Initialize variables to prevent errors later
+advisor_data = None
+team_df = None
+overall_df = None
+mgmt_df = None
+
 # ===================================================
-# 1. ADVISOR VIEW (Filters + Content)
+# ADVISOR VIEW FILTERS
 # ===================================================
 if view_type == "👤 Advisor View":
-    st.markdown("#### Advisor Filters")
+    
+    st.markdown("**Advisor View - Select Filters Below:**")
     adv_col1, adv_col2, adv_col3, adv_col4 = st.columns(4)
     
     with adv_col1:
-        selected_process = st.selectbox("🔹 Process:", ["All"] + sorted(df["Process"].dropna().unique().tolist()))
+        process_list = ["All"] + sorted(df["Process"].dropna().unique().tolist())
+        selected_process = st.selectbox("🔹 Process:", process_list, key="adv_process")
+    
     with adv_col2:
-        loc_df = df[df["Process"] == selected_process] if selected_process != "All" else df
-        selected_location = st.selectbox("🔹 Location:", ["All"] + sorted(loc_df["Center / Location"].dropna().unique().tolist()))
+        location_filtered = df[df["Process"] == selected_process] if selected_process != "All" else df.copy()
+        location_list = ["All"] + sorted(location_filtered["Center / Location"].dropna().unique().tolist())
+        selected_location = st.selectbox("🔹 Location:", location_list, key="adv_location")
+    
     with adv_col3:
-        emp_df = loc_df[loc_df["Center / Location"] == selected_location] if selected_location != "All" else loc_df
-        selected_emp_id = st.selectbox("🔹 Employee ID:", ["All"] + sorted(emp_df["EMP Id"].dropna().unique().tolist()))
+        emp_filtered = df[df["Process"] == selected_process] if selected_process != "All" else df.copy()
+        if selected_location != "All": emp_filtered = emp_filtered[emp_filtered["Center / Location"] == selected_location]
+        emp_list = ["All"] + sorted(emp_filtered["EMP Id"].dropna().unique().tolist())
+        selected_emp_id = st.selectbox("🔹 Employee ID:", emp_list, key="adv_emp_id")
+    
     with adv_col4:
-        adv_df = emp_df[emp_df["EMP Id"] == selected_emp_id] if selected_emp_id != "All" else emp_df
-        advisor_list = sorted(adv_df["Advisor Name"].dropna().unique().tolist())
-        selected_advisor = st.selectbox("🔹 Advisor Name:", advisor_list) if advisor_list else None
-
-    if selected_advisor:
-        advisor_data = adv_df[adv_df["Advisor Name"] == selected_advisor].iloc[0]
-        st.markdown("---")
-        st.subheader("📈 Performance Summary")
+        adv_filtered = df[df["Process"] == selected_process] if selected_process != "All" else df.copy()
+        if selected_location != "All": adv_filtered = adv_filtered[adv_filtered["Center / Location"] == selected_location]
+        if selected_emp_id != "All": adv_filtered = adv_filtered[adv_filtered["EMP Id"] == selected_emp_id]
         
-        c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
-        with c1: card("⭐ Star Rating", advisor_data["Star Rating (1-5)"])
-        with c2: card("🏆 Rank", advisor_data.get("Process Rank", "N/A"))
-        with c3: card("📈 Productivity", f"{advisor_data['Productivity (%)']}%")
-        with c4: card("✅ Compliance", f"{advisor_data['Compliance (%) QA']}%")
-        with c5: card("📅 Attendance", f"{advisor_data['Attendance (%)']}%")
-        with c6: card("🎯 Performance", f"{advisor_data.get('Performance (%)', 0)}%")
-        with c7: card("🚫 LOP Days", advisor_data["Total LOP's Days"])
-        
-        # Advisor Details table format
-        st.markdown("---")
-        st.subheader("📄 Advisor Data")
-        st.dataframe(advisor_data.to_frame().T, hide_index=True, use_container_width=True)
-
-    else:
-        st.warning("⚠️ No advisors found with the selected filters.")
+        advisor_list = sorted(adv_filtered["Advisor Name"].dropna().unique().tolist())
+        if advisor_list:
+            selected_advisor = st.selectbox("🔹 Advisor Name:", advisor_list, key="adv_name")
+            advisor_data = adv_filtered[adv_filtered["Advisor Name"] == selected_advisor].iloc[0]
+        else:
+            st.warning("⚠️ No advisors found with selected filters")
 
 # ===================================================
-# 2. SUPPORT STAFF VIEW (Filters + Content)
+# SUPPORT STAFF VIEW FILTERS
 # ===================================================
-elif view_type == "👥 Support Staff View":
-    st.markdown("#### Support Staff Filters")
+elif view_type == "👥 Support Staff View":  
+    
+    st.markdown("**Support Staff View - Select Filters Below:**")
     staff_col1, staff_col2, staff_col3, staff_col4, staff_col5, staff_col6 = st.columns(6)
     
     with staff_col1:
-        selected_location = st.selectbox("🔹 Location:", ["All"] + sorted(df["Center / Location"].dropna().unique().tolist()))
-    with staff_col2:
-        pod_df = df[df["Center / Location"] == selected_location] if selected_location != "All" else df
-        selected_pod = st.selectbox("🔹 POD Leader:", ["All"] + sorted(pod_df["POD_Leader"].dropna().unique().tolist()))
-    with staff_col3:
-        proc_df = pod_df[pod_df["POD_Leader"] == selected_pod] if selected_pod != "All" else pod_df
-        selected_process = st.selectbox("🔹 Process:", ["All"] + sorted(proc_df["Process"].dropna().unique().tolist()))
-    with staff_col4:
-        cm_df = proc_df[proc_df["Process"] == selected_process] if selected_process != "All" else proc_df
-        selected_cm = st.selectbox("🔹 CM:", ["All"] + sorted(cm_df["CM"].dropna().unique().tolist()))
-    with staff_col5:
-        am_df = cm_df[cm_df["CM"] == selected_cm] if selected_cm != "All" else cm_df
-        selected_am = st.selectbox("🔹 AM:", ["All"] + sorted(am_df["AM"].dropna().unique().tolist()))
-    with staff_col6:
-        tl_df = am_df[am_df["AM"] == selected_am] if selected_am != "All" else am_df
-        selected_tl = st.selectbox("🔹 TL:", ["All"] + sorted(tl_df["TL"].dropna().unique().tolist()))
+        location_list = ["All"] + sorted(df["Center / Location"].dropna().unique().tolist())
+        selected_location = st.selectbox("🔹 Location:", location_list, key="staff_location")
     
-    team_df = tl_df[tl_df["TL"] == selected_tl] if selected_tl != "All" else tl_df
-
-    if not team_df.empty:
-        st.markdown("---")
-        st.subheader("📈 Team Summary")
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
-        with c1: card("👥 Team Size", len(team_df))
-        with c2: card("⭐ Avg Rating", round(team_df["Star Rating (1-5)"].mean(), 2))
-        with c3: card("📈 Avg Prod", f"{round(team_df['Productivity (%)'].mean(), 1)}%")
-        with c4: card("✅ Avg Comp", f"{round(team_df['Compliance (%) QA'].mean(), 1)}%")
-        with c5: card("📅 Avg Att", f"{round(team_df['Attendance (%)'].mean(), 1)}%")
-        with c6: card("🎯 Avg Perf", f"{round(team_df.get('Performance (%)', pd.Series([0])).mean(), 1)}%")
-        
-        st.markdown("---")
-        st.subheader("👥 Team Members Details")
-        display_cols = ["Advisor Name", "EMP Id", "Status", "Productivity (%)", "Compliance (%) QA", "Attendance (%)", "Performance (%)", "Star Rating (1-5)"]
-        st.dataframe(team_df[[c for c in display_cols if c in team_df.columns]], hide_index=True, use_container_width=True)
+    with staff_col2:
+        pod_filtered = df[df["Center / Location"] == selected_location] if selected_location != "All" else df.copy()
+        pod_list = ["All"] + sorted(pod_filtered["POD_Leader"].dropna().unique().tolist())
+        selected_pod = st.selectbox("🔹 POD Leader:", pod_list, key="staff_pod")
+    
+    with staff_col3:
+        process_filtered = df[df["Center / Location"] == selected_location] if selected_location != "All" else df.copy()
+        if selected_pod != "All": process_filtered = process_filtered[process_filtered["POD_Leader"] == selected_pod]
+        process_list = ["All"] + sorted(process_filtered["Process"].dropna().unique().tolist())
+        selected_process = st.selectbox("🔹 Process:", process_list, key="staff_process")
+    
+    with staff_col4:
+        cm_filtered = df[df["Center / Location"] == selected_location] if selected_location != "All" else df.copy()
+        if selected_pod != "All": cm_filtered = cm_filtered[cm_filtered["POD_Leader"] == selected_pod]
+        if selected_process != "All": cm_filtered = cm_filtered[cm_filtered["Process"] == selected_process]
+        cm_list = ["All"] + sorted(cm_filtered["CM"].dropna().unique().tolist())
+        selected_cm = st.selectbox("🔹 CM (Collection Manager):", cm_list, key="staff_cm")
+    
+    with staff_col5:
+        am_filtered = df[df["Center / Location"] == selected_location] if selected_location != "All" else df.copy()
+        if selected_pod != "All": am_filtered = am_filtered[am_filtered["POD_Leader"] == selected_pod]
+        if selected_process != "All": am_filtered = am_filtered[am_filtered["Process"] == selected_process]
+        if selected_cm != "All": am_filtered = am_filtered[am_filtered["CM"] == selected_cm]
+        am_list = ["All"] + sorted(am_filtered["AM"].dropna().unique().tolist())
+        selected_am = st.selectbox("🔹 AM (Assistant Manager):", am_list, key="staff_am")
+    
+    with staff_col6:
+        tl_filtered = df[df["Center / Location"] == selected_location] if selected_location != "All" else df.copy()
+        if selected_pod != "All": tl_filtered = tl_filtered[tl_filtered["POD_Leader"] == selected_pod]
+        if selected_process != "All": tl_filtered = tl_filtered[tl_filtered["Process"] == selected_process]
+        if selected_cm != "All": tl_filtered = tl_filtered[tl_filtered["CM"] == selected_cm]
+        if selected_am != "All": tl_filtered = tl_filtered[tl_filtered["AM"] == selected_am]
+        tl_list = ["All"] + sorted(tl_filtered["TL"].dropna().unique().tolist())
+        selected_tl = st.selectbox("🔹 Team Leader (TL):", tl_list, key="staff_tl")
+    
+    team_df = df.copy()
+    if selected_location != "All": team_df = team_df[team_df["Center / Location"] == selected_location]
+    if selected_pod != "All": team_df = team_df[team_df["POD_Leader"] == selected_pod]
+    if selected_process != "All": team_df = team_df[team_df["Process"] == selected_process]
+    if selected_cm != "All": team_df = team_df[team_df["CM"] == selected_cm]
+    if selected_am != "All": team_df = team_df[team_df["AM"] == selected_am]
+    if selected_tl != "All": team_df = team_df[team_df["TL"] == selected_tl]
 
 # ===================================================
-# 3. OVERALL VIEW (Filters + Content)
+# OVERALL VIEW FILTERS
 # ===================================================
 elif view_type == "📈 Overall View":
-    st.markdown("#### Overall View Filters (Top 10% Advisors)")
+    
+    st.markdown("**Overall View - Top 10% Advisors by Star Rating**")
     overall_col1, overall_col2, overall_col3 = st.columns(3)
     
     with overall_col1:
-        selected_overall_location = st.selectbox("🔹 Location:", ["All"] + sorted(df["Center / Location"].dropna().unique().tolist()), key="ov_loc")
+        location_list = ["All"] + sorted(df["Center / Location"].dropna().unique().tolist())
+        selected_overall_location = st.selectbox("🔹 Location:", location_list, key="overall_location")
+    
     with overall_col2:
-        ov_pod_df = df[df["Center / Location"] == selected_overall_location] if selected_overall_location != "All" else df
-        selected_overall_pod = st.selectbox("🔹 POD Leader:", ["All"] + sorted(ov_pod_df["POD_Leader"].dropna().unique().tolist()), key="ov_pod")
+        overall_pod_filtered = df[df["Center / Location"] == selected_overall_location] if selected_overall_location != "All" else df.copy()
+        overall_pod_list = ["All"] + sorted(overall_pod_filtered["POD_Leader"].dropna().unique().tolist())
+        selected_overall_pod = st.selectbox("🔹 POD Leader:", overall_pod_list, key="overall_pod")
+    
     with overall_col3:
-        ov_cm_df = ov_pod_df[ov_pod_df["POD_Leader"] == selected_overall_pod] if selected_overall_pod != "All" else ov_pod_df
-        selected_overall_cm = st.selectbox("🔹 CM:", ["All"] + sorted(ov_cm_df["CM"].dropna().unique().tolist()), key="ov_cm")
+        overall_cm_filtered = df[df["Center / Location"] == selected_overall_location] if selected_overall_location != "All" else df.copy()
+        if selected_overall_pod != "All": overall_cm_filtered = overall_cm_filtered[overall_cm_filtered["POD_Leader"] == selected_overall_pod]
+        overall_cm_list = ["All"] + sorted(overall_cm_filtered["CM"].dropna().unique().tolist())
+        selected_overall_cm = st.selectbox("🔹 CM (Collection Manager):", overall_cm_list, key="overall_cm")
     
-    overall_df = ov_cm_df[ov_cm_df["CM"] == selected_overall_cm] if selected_overall_cm != "All" else ov_cm_df
+    overall_df = df.copy()
+    if selected_overall_location != "All": overall_df = overall_df[overall_df["Center / Location"] == selected_overall_location]
+    if selected_overall_pod != "All": overall_df = overall_df[overall_df["POD_Leader"] == selected_overall_pod]
+    if selected_overall_cm != "All": overall_df = overall_df[overall_df["CM"] == selected_overall_cm]
     
-    if not overall_df.empty:
+    if len(overall_df) > 0:
         top_10_percent = []
         for process in overall_df["Process"].unique():
-            process_data = overall_df[overall_df["Process"] == process]
-            top_count = max(1, int(len(process_data) * 0.1))
-            top_10_percent.append(process_data.nlargest(top_count, "Star Rating (1-5)"))
+            process_data = overall_df[overall_df["Process"] == process].copy()
+            count = len(process_data)
+            top_count = max(1, int(count * 0.1))
+            top_process = process_data.nlargest(top_count, "Star Rating (1-5)")
+            top_10_percent.append(top_process)
         
-        final_top_df = pd.concat(top_10_percent, ignore_index=True).sort_values("Star Rating (1-5)", ascending=False)
-        
-        st.markdown("---")
-        st.subheader("🏆 Top Performers Details (Top 10%)")
-        overall_cols = ["Advisor Name", "Process", "Center / Location", "POD_Leader", "Star Rating (1-5)", "Productivity (%)", "Compliance (%) QA", "Performance (%)"]
-        st.dataframe(final_top_df[[c for c in overall_cols if c in final_top_df.columns]], hide_index=True, use_container_width=True)
+        overall_df = pd.concat(top_10_percent, ignore_index=True)
+        overall_df = overall_df.sort_values("Star Rating (1-5)", ascending=False)
 
 # ===================================================
-# 4. MANAGEMENT SUMMARY (Filters + Content)
+# MANAGEMENT SUMMARY VIEW FILTERS
 # ===================================================
 elif view_type == "🏢 Management Summary":
-    st.markdown("#### Management Summary Filters")
+    
+    st.markdown("**Management Summary - Select Filters Below:**")
     mgmt_col1, mgmt_col2 = st.columns(2)
     
     with mgmt_col1:
-        selected_mgmt_location = st.selectbox("🔹 Location:", ["All"] + sorted(df["Center / Location"].dropna().unique().tolist()), key="mg_loc")
+        location_list = ["All"] + sorted(df["Center / Location"].dropna().unique().tolist())
+        selected_mgmt_location = st.selectbox("🔹 Location:", location_list, key="mgmt_location")
+        
     with mgmt_col2:
-        mg_pod_df = df[df["Center / Location"] == selected_mgmt_location] if selected_mgmt_location != "All" else df
-        selected_mgmt_pod = st.selectbox("🔹 POD Leader:", ["All"] + sorted(mg_pod_df["POD_Leader"].dropna().unique().tolist()), key="mg_pod")
+        mgmt_pod_filtered = df[df["Center / Location"] == selected_mgmt_location] if selected_mgmt_location != "All" else df.copy()
+        pod_list = ["All"] + sorted(mgmt_pod_filtered["POD_Leader"].dropna().unique().tolist())
+        selected_mgmt_pod = st.selectbox("🔹 POD Leader:", pod_list, key="mgmt_pod")
         
-    mgmt_df = mg_pod_df[mg_pod_df["POD_Leader"] == selected_mgmt_pod] if selected_mgmt_pod != "All" else mg_pod_df
+    mgmt_df = df.copy()
+    if selected_mgmt_location != "All": mgmt_df = mgmt_df[mgmt_df["Center / Location"] == selected_mgmt_location]
+    if selected_mgmt_pod != "All": mgmt_df = mgmt_df[mgmt_df["POD_Leader"] == selected_mgmt_pod]
 
-    if not mgmt_df.empty:
-        st.markdown("---")
-        def get_aggregated_summary(data, group_by_col):
-            if group_by_col not in data.columns: return pd.DataFrame()
-            summary = data.groupby(group_by_col).agg(
-                Headcount=('EMP Id', 'count'),
-                Avg_Rating=('Star Rating (1-5)', 'mean'),
-                Avg_Prod=('Productivity (%)', 'mean'),
-                Avg_Comp=('Compliance (%) QA', 'mean'),
-                Avg_Att=('Attendance (%)', 'mean'),
-                Avg_Perf=('Performance (%)', 'mean'),
-                Avg_LOP=('Total LOP\'s Days', 'mean')
-            ).reset_index()
-            
-            summary['🏆 Final Score (1-5)'] = (
-                summary['Avg_Rating'] + (summary['Avg_Prod']/100*5) + (summary['Avg_Comp']/100*5) + 
-                (summary['Avg_Att']/100*5) + (summary['Avg_Perf']/100*5) + (5 - summary['Avg_LOP'].clip(0,5))
-            ) / 6
-            
-            return summary.round(2)
+st.markdown("---")
+
+# ===================================================
+# ADVISOR VIEW CONTENT
+# ===================================================
+if view_type == "👤 Advisor View" and advisor_data is not None:
+    
+    st.success(f"✅ Selected Advisor: **{selected_advisor}** (ID: {selected_emp_id}) | Location: **{selected_location}** | Process: **{selected_process}**")
+    st.subheader("📈 Performance Summary")
+    
+    # Adjusted columns to 7 to handle the new Performance (%) card smoothly
+    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
+    with c1: card("⭐ Star Rating", advisor_data["Star Rating (1-5)"])
+    with c2: card("🏆 Rank", advisor_data["Process Rank"])
+    with c3: card("📈 Productivity", f"{advisor_data['Productivity (%)']}%")
+    with c4: card("✅ Compliance", f"{advisor_data['Compliance (%) QA']}%")
+    with c5: card("📅 Attendance", f"{advisor_data['Attendance (%)']}%")
+    with c6: card("🎯 Performance", f"{advisor_data['Performance (%)']}%") # Added Performance %
+    with c7: card("🚫 LOP", advisor_data["Total LOP's Days"])
+    
+    st.markdown("---")
+    
+    left, right = st.columns(2)
+    with left:
+        st.subheader("👤 Advisor Details")
+        st.write("**EMP ID:**", advisor_data["EMP Id"])
+        st.write("**Email:**", advisor_data["Email Id"])
+        st.write("**Location:**", advisor_data["Center / Location"])
+        st.write("**Status:**", advisor_data["Status"])
+    with right:
+        st.subheader("🏢 Reporting Hierarchy")
+        st.write("**Process:**", advisor_data["Process"])
+        st.write("**TL:**", advisor_data["TL"])
+        st.write("**AM:**", advisor_data["AM"])
+        st.write("**CM:**", advisor_data["CM"])
+        if "POD_Leader" in advisor_data: st.write("**POD Leader:**", advisor_data["POD_Leader"])
+    
+    st.markdown("---")
+    
+    st.subheader("⭐ KPI Scorecard")
+    col1, col2 = st.columns(2)
+    with col1:
+        st.write("**Attendance Score**")
+        st.progress(float(advisor_data["Attendance Score (1-5)"]) / 5)
+        st.write(f"Score: {advisor_data['Attendance Score (1-5)']}/5")
         
-        tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["👔 TL Wise", "👔 AM Wise", "👔 CM Wise", "🚀 POD Leader Wise", "📍 Location Wise", "⚙️ Process Wise"])
+        st.write("**LOP Score**")
+        st.progress(float(advisor_data["LOP Score (1-5)"]) / 5)
+        st.write(f"Score: {advisor_data['LOP Score (1-5)']}/5")
         
-        with tab1: st.dataframe(get_aggregated_summary(mgmt_df, "TL"), hide_index=True, use_container_width=True)
-        with tab2: st.dataframe(get_aggregated_summary(mgmt_df, "AM"), hide_index=True, use_container_width=True)
-        with tab3: st.dataframe(get_aggregated_summary(mgmt_df, "CM"), hide_index=True, use_container_width=True)
-        with tab4: st.dataframe(get_aggregated_summary(mgmt_df, "POD_Leader"), hide_index=True, use_container_width=True)
-        with tab5: st.dataframe(get_aggregated_summary(mgmt_df, "Center / Location"), hide_index=True, use_container_width=True)
-        with tab6: st.dataframe(get_aggregated_summary(mgmt_df, "Process"), hide_index=True, use_container_width=True)
+        st.write("**Performance Score**") # Rendered the custom Performance Score layout here
+        st.progress(float(advisor_data["Performance Score (1-5)"]) / 5)
+        st.write(f"Score: {advisor_data['Performance Score (1-5)']}/5")
+    with col2:
+        st.write("**Productivity Score**")
+        st.progress(float(advisor_data["Productiviy Score (1-5)"]) / 5)
+        st.write(f"Score: {advisor_data['Productiviy Score (1-5)']}/5")
+        
+        st.write("**Compliance Score**")
+        st.progress(float(advisor_data["Compliance Score (1-5)"]) / 5)
+        st.write(f"Score: {advisor_data['Compliance Score (1-5)']}/5")
+    
+    st.markdown("---")
+    
+    st.subheader("📊 KPI Comparison")
+    chart_df = pd.DataFrame({
+        "KPI": ["Attendance", "LOP", "Performance", "Productivity", "Compliance"],
+        "Score": [
+            advisor_data["Attendance Score (1-5)"], advisor_data["LOP Score (1-5)"],
+            advisor_data["Performance Score (1-5)"], advisor_data["Productiviy Score (1-5)"],
+            advisor_data["Compliance Score (1-5)"]
+        ]
+    })
+    
+    fig = px.bar(chart_df, x="KPI", y="Score", text="Score", color="Score", color_continuous_scale="Blues")
+    fig.update_layout(template="plotly_dark", paper_bgcolor="#090a2f", plot_bgcolor="#090a2f", font=dict(color="white"), height=450, coloraxis_showscale=False)
+    st.plotly_chart(fig, use_container_width=True)
+    
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("💪 Strengths")
+        strengths = []
+        if advisor_data["Attendance Score (1-5)"] >= 4: strengths.append("✅ Excellent Attendance")
+        if advisor_data["Productiviy Score (1-5)"] >= 4: strengths.append("✅ High Productivity")
+        if advisor_data["Compliance Score (1-5)"] >= 4: strengths.append("✅ Good Compliance")
+        if advisor_data["Performance Score (1-5)"] >= 4: strengths.append("✅ Strong Performance Output")
+        if advisor_data["LOP Score (1-5)"] == 5: strengths.append("✅ Zero LOP")
+        if not strengths: st.warning("⚠️ No major strengths identified.")
+        else:
+            for s in strengths: st.write(s)
+            
+    with col2:
+        st.subheader("🎯 Improvement Areas")
+        improvements = []
+        if advisor_data["Attendance Score (1-5)"] < 4: improvements.append("Improve Attendance")
+        if advisor_data["Productiviy Score (1-5)"] < 4: improvements.append("Increase Productivity")
+        if advisor_data["Compliance Score (1-5)"] < 4: improvements.append("Improve Compliance")
+        if advisor_data["Performance Score (1-5)"] < 4: improvements.append("Increase Performance")
+        if not improvements: st.success("✅ Excellent Performance!")
+        else:
+            for imp in improvements: st.write("🔸", imp)
+    
+    st.markdown("---")
+    with st.expander("📄 View Complete Advisor Data"):
+        st.dataframe(advisor_data.to_frame())
+
+# ===================================================
+# SUPPORT STAFF VIEW CONTENT
+# ===================================================
+elif view_type == "👥 Support Staff View" and team_df is not None and len(team_df) > 0:
+    
+    filter_summary = []
+    if selected_pod != "All": filter_summary.append(f"POD: {selected_pod}")
+    if selected_process != "All": filter_summary.append(f"Process: {selected_process}")
+    if selected_cm != "All": filter_summary.append(f"CM: {selected_cm}")
+    if selected_am != "All": filter_summary.append(f"AM: {selected_am}")
+    if selected_tl != "All": filter_summary.append(f"TL: {selected_tl}")
+    
+    summary_text = " | ".join(filter_summary) if filter_summary else "All Staff"
+    st.success(f"✅ Showing {len(team_df)} advisors | {summary_text}")
+    st.markdown("---")
+    
+    st.subheader("📈 Team Summary")
+    
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    with c1: card("👥 Team Size", len(team_df))
+    with c2: card("⭐ Avg Rating", round(team_df["Star Rating (1-5)"].astype(float).mean(), 2))
+    with c3: card("📈 Avg Productivity", f"{round(team_df['Productivity (%)'].astype(float).mean(), 2)}%")
+    with c4: card("✅ Avg Compliance", f"{round(team_df['Compliance (%) QA'].astype(float).mean(), 2)}%")
+    with c5: card("📅 Avg Attendance", f"{round(team_df['Attendance (%)'].astype(float).mean(), 2)}%")
+    with c6: card("🎯 Avg Performance", f"{round(team_df['Performance (%)'].astype(float).mean(), 2)}%") # Added to metrics row
+    
+    st.markdown("---")
+    
+    st.subheader("👥 Team Members Details")
+    display_cols = [
+        "Advisor Name", "EMP Id", "Email Id", "Status", "Productivity (%)", 
+        "Compliance (%) QA", "Attendance (%)", "Performance (%)", "Performance Score (1-5)", "Star Rating (1-5)", "Process"
+    ]
+    st.dataframe(team_df[[c for c in display_cols if c in team_df.columns]].copy(), use_container_width=True)
+    
+    st.markdown("---")
+    
+    st.subheader("📊 Team Performance Analysis")
+    score_cols = ["Attendance Score (1-5)", "LOP Score (1-5)", "Productiviy Score (1-5)", "Compliance Score (1-5)", "Performance Score (1-5)"]
+    team_scores = team_df[score_cols].astype(float).mean()
+    team_chart_df = pd.DataFrame({
+        "Metric": ["Attendance", "LOP", "Productivity", "Compliance", "Performance"],
+        "Avg Score": [
+            team_scores["Attendance Score (1-5)"], team_scores["LOP Score (1-5)"], 
+            team_scores["Productiviy Score (1-5)"], team_scores["Compliance Score (1-5)"],
+            team_scores["Performance Score (1-5)"] # Integrated into dynamic bar chart
+        ]
+    })
+    
+    fig_team = px.bar(team_chart_df, x="Metric", y="Avg Score", text="Avg Score", color="Avg Score", color_continuous_scale="Blues")
+    fig_team.update_layout(template="plotly_dark", paper_bgcolor="#090a2f", plot_bgcolor="#090a2f", font=dict(color="white"), height=450, coloraxis_showscale=False)
+    st.plotly_chart(fig_team, use_container_width=True)
+    
+    st.markdown("---")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        st.subheader("🏆 Top 3 Performers")
+        top_performers = team_df.nlargest(3, "Star Rating (1-5)")
+        for idx, (_, row) in enumerate(top_performers.iterrows(), 1): st.write(f"{idx}. **{row['Advisor Name']}** - ⭐ {row['Star Rating (1-5)']} | Prod: {row['Productivity (%)']}% | Perf: {row['Performance (%)']}%")
+    with col2:
+        st.subheader("⚠️ Needs Improvement")
+        bottom_performers = team_df.nsmallest(3, "Star Rating (1-5)")
+        for idx, (_, row) in enumerate(bottom_performers.iterrows(), 1): st.write(f"{idx}. **{row['Advisor Name']}** - ⭐ {row['Star Rating (1-5)']} | Prod: {row['Productivity (%)']}% | Perf: {row['Performance (%)']}%")
+    
+    st.markdown("---")
+    with st.expander("📄 Export Team Data"):
+        st.download_button(label="⬇️ Download Team Data (CSV)", data=team_df.to_csv(index=False), file_name="team_data.csv", mime="text/csv")
+
+# ===================================================
+# OVERALL VIEW CONTENT
+# ===================================================
+elif view_type == "📈 Overall View" and overall_df is not None and len(overall_df) > 0:
+    
+    st.success(f"✅ Showing Top 10% Advisors per process based on Star Ratings (Total: {len(overall_df)} advisors)")
+    
+    st.subheader("🏆 Top Performers Details")
+    
+    overall_display_cols = [
+        "Advisor Name", "Process", "Center / Location", "POD_Leader", "CM",
+        "Star Rating (1-5)", "Productivity (%)", "Compliance (%) QA", "Attendance (%)", "Performance (%)"
+    ]
+    
+    available_overall_cols = [c for c in overall_display_cols if c in overall_df.columns]
+    
+    st.dataframe(overall_df[available_overall_cols], use_container_width=True)
+    
+    st.markdown("---")
+    
+    with st.expander("📄 Export Top Performers Data"):
+        st.write("**Top 10% Overall Data Export**")
+        csv = overall_df.to_csv(index=False)
+        st.download_button(
+            label="⬇️ Download Top 10% Data (CSV)",
+            data=csv,
+            file_name="overall_top_10_percent_advisors.csv",
+            mime="text/csv"
+        )
+
+# ===================================================
+# MANAGEMENT SUMMARY VIEW CONTENT
+# ===================================================
+elif view_type == "🏢 Management Summary" and mgmt_df is not None and len(mgmt_df) > 0:
+    
+    st.success(f"✅ Showing Management Summaries | Location: **{selected_mgmt_location}** | POD Leader: **{selected_mgmt_pod}**")
+    st.markdown("---")
+    
+    # Helper function to generate aggregate tables with a balanced Final Performance Score
+    def get_aggregated_summary(df, group_by_col):
+        if group_by_col not in df.columns:
+            return pd.DataFrame()
+            
+        summary = df.groupby(group_by_col).agg(
+            Number_of_Advisors=('EMP Id', 'count'),
+            Avg_Star_Rating=('Star Rating (1-5)', 'mean'),
+            Avg_Productivity_Pct=('Productivity (%)', 'mean'),
+            Avg_Compliance_Pct=('Compliance (%) QA', 'mean'),
+            Avg_Attendance_Pct=('Attendance (%)', 'mean'),
+            Avg_Performance_Pct=('Performance (%)', 'mean'), # Added aggregate performance percentage
+            Avg_LOP_Days=('Total LOP\'s Days', 'mean')
+        ).reset_index()
+        
+        # Calculate final balanced rating out of 5 across ALL 6 metrics cleanly
+        prod_score = (summary['Avg_Productivity_Pct'] / 100) * 5
+        comp_score = (summary['Avg_Compliance_Pct'] / 100) * 5
+        att_score = (summary['Avg_Attendance_Pct'] / 100) * 5
+        perf_score = (summary['Avg_Performance_Pct'] / 100) * 5 # Scale Performance to 5 points
+        lop_score = 5 - summary['Avg_LOP_Days'].clip(0, 5) 
+        
+        # Final Rating is balanced across 6 metrics (Star Rating + 4 scaled percentages + 1 LOP inverse metric)
+        summary['Final_Performance_Rating_out_of_5'] = (
+            summary['Avg_Star_Rating'] + prod_score + comp_score + att_score + perf_score + lop_score
+        ) / 6
+        
+        # Format names for a beautiful dashboard look
+        summary = summary.rename(columns={
+            "Avg_Productivity_Pct": "Avg Productivity (%)",
+            "Avg_Compliance_Pct": "Avg Compliance (%)",
+            "Avg_Attendance_Pct": "Avg Attendance (%)",
+            "Avg_Performance_Pct": "Avg Performance (%)", # Clean column mapping
+            "Avg_LOP_Days": "Avg LOP (Days)",
+            "Avg_Star_Rating": "Avg Star Rating",
+            "Final_Performance_Rating_out_of_5": "🏆 Final Balanced Score (1-5)"
+        })
+        
+        # Round the metrics for clean output
+        for col in summary.columns[1:]:
+            summary[col] = summary[col].round(2)
+            
+        return summary
+    
+    # Create navigation tabs including Process and Final Rating integrations
+    tab_tl, tab_am, tab_cm, tab_pod, tab_loc, tab_proc = st.tabs([
+        "👔 TL Wise", "👔 AM Wise", "👔 CM Wise", "🚀 POD Leader Wise", "📍 Location Wise", "⚙️ Process Wise"
+    ])
+    
+    with tab_tl:
+        st.subheader("Team Leader (TL) Performance & Final Balanced Score")
+        st.dataframe(get_aggregated_summary(mgmt_df, "TL"), use_container_width=True)
+        
+    with tab_am:
+        st.subheader("Assistant Manager (AM) Performance & Final Balanced Score")
+        st.dataframe(get_aggregated_summary(mgmt_df, "AM"), use_container_width=True)
+        
+    with tab_cm:
+        st.subheader("Collection Manager (CM) Performance & Final Balanced Score")
+        st.dataframe(get_aggregated_summary(mgmt_df, "CM"), use_container_width=True)
+        
+    with tab_pod:
+        st.subheader("POD Leader Performance & Final Balanced Score")
+        if "POD_Leader" in mgmt_df.columns:
+            st.dataframe(get_aggregated_summary(mgmt_df, "POD_Leader"), use_container_width=True)
+        else:
+            st.warning("POD_Leader column not found in data.")
+            
+    with tab_loc:
+        st.subheader("Center / Location Performance & Final Balanced Score")
+        st.dataframe(get_aggregated_summary(mgmt_df, "Center / Location"), use_container_width=True)
+        
+    with tab_proc:
+        st.subheader("Process Wise Performance & Final Balanced Score")
+        st.dataframe(get_aggregated_summary(mgmt_df, "Process"), use_container_width=True)
