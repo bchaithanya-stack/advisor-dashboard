@@ -9,7 +9,7 @@ from google.oauth2.service_account import Credentials
 # ---------------------------------------------------
 
 st.set_page_config(
-    page_title="Advisor Performance Dashboard",
+    page_title="DPDzero Productivity Dashboard",
     page_icon="📊",
     layout="wide"
 )
