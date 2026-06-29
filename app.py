@@ -23,11 +23,11 @@ border:1px solid #5058d4;
 ">
 
 <h1 style="color:white;margin-bottom:0;">
-📊 DPDzero Operations Productivity Dashboard
+📊 Advisor Performance Dashboard
 </h1>
 
 <p style="color:#B8BCFF;">
-Real Time Performance Analytics
+Real Time Performance Analytics (Google Sheets)
 </p>
 
 </div>
@@ -89,9 +89,10 @@ def load_data_from_google_sheets():
             st.error("❌ No data found in the Google Sheet.")
             st.stop()
 
+        # Added new columns here for text-to-numeric type safety
         numeric_cols = [
             "Star Rating (1-5)", "Process Rank", "Productivity (%)", 
-            "Compliance (%) QA", "Attendance (%)", "Total LOP's Days",
+            "Compliance (%) QA", "Attendance (%)", "Performance (%)", "Total LOP's Days",
             "Attendance Score (1-5)", "LOP Score (1-5)", "Performance Score (1-5)", 
             "Productiviy Score (1-5)", "Compliance Score (1-5)"
         ]
@@ -123,7 +124,7 @@ def card(title, value):
     background:#17194c; padding:20px; border-radius:18px; border:1px solid #545eff; text-align:center; box-shadow:0px 0px 15px rgba(120,120,255,.2); height:160px; width:100%; display:flex; flex-direction:column; justify-content:center; align-items:center; box-sizing:border-box;
     ">
     <p style="font-size:14px;color:#9da2ff;margin:0;padding:0;">{title}</p>
-    <h1 style="color:white;margin:8px 0 0 0;padding:0;font-size:48px;">{value}</h1>
+    <h1 style="color:white;margin:8px 0 0 0;padding:0;font-size:36px;">{value}</h1>
     </div>
     """, unsafe_allow_html=True)
 
@@ -323,13 +324,15 @@ if view_type == "👤 Advisor View" and advisor_data is not None:
     st.success(f"✅ Selected Advisor: **{selected_advisor}** (ID: {selected_emp_id}) | Location: **{selected_location}** | Process: **{selected_process}**")
     st.subheader("📈 Performance Summary")
     
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    # Adjusted columns to 7 to handle the new Performance (%) card smoothly
+    c1, c2, c3, c4, c5, c6, c7 = st.columns(7)
     with c1: card("⭐ Star Rating", advisor_data["Star Rating (1-5)"])
     with c2: card("🏆 Rank", advisor_data["Process Rank"])
     with c3: card("📈 Productivity", f"{advisor_data['Productivity (%)']}%")
     with c4: card("✅ Compliance", f"{advisor_data['Compliance (%) QA']}%")
     with c5: card("📅 Attendance", f"{advisor_data['Attendance (%)']}%")
-    with c6: card("🚫 LOP", advisor_data["Total LOP's Days"])
+    with c6: card("🎯 Performance", f"{advisor_data['Performance (%)']}%") # Added Performance %
+    with c7: card("🚫 LOP", advisor_data["Total LOP's Days"])
     
     st.markdown("---")
     
@@ -361,7 +364,7 @@ if view_type == "👤 Advisor View" and advisor_data is not None:
         st.progress(float(advisor_data["LOP Score (1-5)"]) / 5)
         st.write(f"Score: {advisor_data['LOP Score (1-5)']}/5")
         
-        st.write("**Performance Score**")
+        st.write("**Performance Score**") # Rendered the custom Performance Score layout here
         st.progress(float(advisor_data["Performance Score (1-5)"]) / 5)
         st.write(f"Score: {advisor_data['Performance Score (1-5)']}/5")
     with col2:
@@ -398,6 +401,7 @@ if view_type == "👤 Advisor View" and advisor_data is not None:
         if advisor_data["Attendance Score (1-5)"] >= 4: strengths.append("✅ Excellent Attendance")
         if advisor_data["Productiviy Score (1-5)"] >= 4: strengths.append("✅ High Productivity")
         if advisor_data["Compliance Score (1-5)"] >= 4: strengths.append("✅ Good Compliance")
+        if advisor_data["Performance Score (1-5)"] >= 4: strengths.append("✅ Strong Performance Output")
         if advisor_data["LOP Score (1-5)"] == 5: strengths.append("✅ Zero LOP")
         if not strengths: st.warning("⚠️ No major strengths identified.")
         else:
@@ -436,27 +440,35 @@ elif view_type == "👥 Support Staff View" and team_df is not None and len(team
     
     st.subheader("📈 Team Summary")
     
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1: card("👥 Team Size", len(team_df))
     with c2: card("⭐ Avg Rating", round(team_df["Star Rating (1-5)"].astype(float).mean(), 2))
     with c3: card("📈 Avg Productivity", f"{round(team_df['Productivity (%)'].astype(float).mean(), 2)}%")
     with c4: card("✅ Avg Compliance", f"{round(team_df['Compliance (%) QA'].astype(float).mean(), 2)}%")
     with c5: card("📅 Avg Attendance", f"{round(team_df['Attendance (%)'].astype(float).mean(), 2)}%")
+    with c6: card("🎯 Avg Performance", f"{round(team_df['Performance (%)'].astype(float).mean(), 2)}%") # Added to metrics row
     
     st.markdown("---")
     
     st.subheader("👥 Team Members Details")
-    display_cols = ["Advisor Name", "EMP Id", "Email Id", "Status", "Productivity (%)", "Compliance (%) QA", "Attendance (%)", "Star Rating (1-5)", "Process"]
+    display_cols = [
+        "Advisor Name", "EMP Id", "Email Id", "Status", "Productivity (%)", 
+        "Compliance (%) QA", "Attendance (%)", "Performance (%)", "Performance Score (1-5)", "Star Rating (1-5)", "Process"
+    ]
     st.dataframe(team_df[[c for c in display_cols if c in team_df.columns]].copy(), use_container_width=True)
     
     st.markdown("---")
     
     st.subheader("📊 Team Performance Analysis")
-    score_cols = ["Attendance Score (1-5)", "LOP Score (1-5)", "Productiviy Score (1-5)", "Compliance Score (1-5)"]
+    score_cols = ["Attendance Score (1-5)", "LOP Score (1-5)", "Productiviy Score (1-5)", "Compliance Score (1-5)", "Performance Score (1-5)"]
     team_scores = team_df[score_cols].astype(float).mean()
     team_chart_df = pd.DataFrame({
-        "Metric": ["Attendance", "LOP", "Productivity", "Compliance"],
-        "Avg Score": [team_scores["Attendance Score (1-5)"], team_scores["LOP Score (1-5)"], team_scores["Productiviy Score (1-5)"], team_scores["Compliance Score (1-5)"]]
+        "Metric": ["Attendance", "LOP", "Productivity", "Compliance", "Performance"],
+        "Avg Score": [
+            team_scores["Attendance Score (1-5)"], team_scores["LOP Score (1-5)"], 
+            team_scores["Productiviy Score (1-5)"], team_scores["Compliance Score (1-5)"],
+            team_scores["Performance Score (1-5)"] # Integrated into dynamic bar chart
+        ]
     })
     
     fig_team = px.bar(team_chart_df, x="Metric", y="Avg Score", text="Avg Score", color="Avg Score", color_continuous_scale="Blues")
@@ -469,11 +481,11 @@ elif view_type == "👥 Support Staff View" and team_df is not None and len(team
     with col1:
         st.subheader("🏆 Top 3 Performers")
         top_performers = team_df.nlargest(3, "Star Rating (1-5)")
-        for idx, (_, row) in enumerate(top_performers.iterrows(), 1): st.write(f"{idx}. **{row['Advisor Name']}** - ⭐ {row['Star Rating (1-5)']} | Prod: {row['Productivity (%)']}% | Comp: {row['Compliance (%) QA']}%")
+        for idx, (_, row) in enumerate(top_performers.iterrows(), 1): st.write(f"{idx}. **{row['Advisor Name']}** - ⭐ {row['Star Rating (1-5)']} | Prod: {row['Productivity (%)']}% | Perf: {row['Performance (%)']}%")
     with col2:
         st.subheader("⚠️ Needs Improvement")
         bottom_performers = team_df.nsmallest(3, "Star Rating (1-5)")
-        for idx, (_, row) in enumerate(bottom_performers.iterrows(), 1): st.write(f"{idx}. **{row['Advisor Name']}** - ⭐ {row['Star Rating (1-5)']} | Prod: {row['Productivity (%)']}% | Comp: {row['Compliance (%) QA']}%")
+        for idx, (_, row) in enumerate(bottom_performers.iterrows(), 1): st.write(f"{idx}. **{row['Advisor Name']}** - ⭐ {row['Star Rating (1-5)']} | Prod: {row['Productivity (%)']}% | Perf: {row['Performance (%)']}%")
     
     st.markdown("---")
     with st.expander("📄 Export Team Data"):
@@ -490,7 +502,7 @@ elif view_type == "📈 Overall View" and overall_df is not None and len(overall
     
     overall_display_cols = [
         "Advisor Name", "Process", "Center / Location", "POD_Leader", "CM",
-        "Star Rating (1-5)", "Productivity (%)", "Compliance (%) QA", "Attendance (%)"
+        "Star Rating (1-5)", "Productivity (%)", "Compliance (%) QA", "Attendance (%)", "Performance (%)"
     ]
     
     available_overall_cols = [c for c in overall_display_cols if c in overall_df.columns]
@@ -528,27 +540,28 @@ elif view_type == "🏢 Management Summary" and mgmt_df is not None and len(mgmt
             Avg_Productivity_Pct=('Productivity (%)', 'mean'),
             Avg_Compliance_Pct=('Compliance (%) QA', 'mean'),
             Avg_Attendance_Pct=('Attendance (%)', 'mean'),
+            Avg_Performance_Pct=('Performance (%)', 'mean'), # Added aggregate performance percentage
             Avg_LOP_Days=('Total LOP\'s Days', 'mean')
         ).reset_index()
         
-        # Calculate final balanced rating out of 5 across metrics
-        # Standardizing % metrics to a 5-point system
+        # Calculate final balanced rating out of 5 across ALL 6 metrics cleanly
         prod_score = (summary['Avg_Productivity_Pct'] / 100) * 5
         comp_score = (summary['Avg_Compliance_Pct'] / 100) * 5
         att_score = (summary['Avg_Attendance_Pct'] / 100) * 5
-        # Penalty calculation for LOP (assumes 5 days max penalty context)
+        perf_score = (summary['Avg_Performance_Pct'] / 100) * 5 # Scale Performance to 5 points
         lop_score = 5 - summary['Avg_LOP_Days'].clip(0, 5) 
         
-        # Final Rating is a blended metric
+        # Final Rating is balanced across 6 metrics (Star Rating + 4 scaled percentages + 1 LOP inverse metric)
         summary['Final_Performance_Rating_out_of_5'] = (
-            summary['Avg_Star_Rating'] + prod_score + comp_score + att_score + lop_score
-        ) / 5
+            summary['Avg_Star_Rating'] + prod_score + comp_score + att_score + perf_score + lop_score
+        ) / 6
         
         # Format names for a beautiful dashboard look
         summary = summary.rename(columns={
             "Avg_Productivity_Pct": "Avg Productivity (%)",
             "Avg_Compliance_Pct": "Avg Compliance (%)",
             "Avg_Attendance_Pct": "Avg Attendance (%)",
+            "Avg_Performance_Pct": "Avg Performance (%)", # Clean column mapping
             "Avg_LOP_Days": "Avg LOP (Days)",
             "Avg_Star_Rating": "Avg Star Rating",
             "Final_Performance_Rating_out_of_5": "🏆 Final Balanced Score (1-5)"
