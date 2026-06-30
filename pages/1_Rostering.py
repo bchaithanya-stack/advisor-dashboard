@@ -279,34 +279,42 @@ if missing_cols:
     st.stop()
 
 
-# ---------------------------------------------------
-# Sidebar Filters (No Spaces in Variable Names)
-# ---------------------------------------------------
-st.sidebar.header("🔍 Filters")
+# =====================================================
+# FILTER SECTION - MAIN CONTENT AREA
+# =====================================================
 
-vp_director = st.sidebar.multiselect(
-    "VP / Director",
-    sorted(df["VP/Director"].dropna().unique()),
-    default=None,
-)
+st.markdown("## 🔍 Filters & Selection")
+st.markdown("---")
 
-location = st.sidebar.multiselect(
-    "Location",
-    sorted(df["Location"].dropna().unique()),
-    default=None,
-)
+col1, col2, col3, col4 = st.columns(4)
 
-process = st.sidebar.multiselect(
-    "Process",
-    sorted(df["Process Name"].dropna().unique()),
-    default=None,
-)
+with col1:
+    vp_director = st.multiselect(
+        "🏢 VP / Director",
+        sorted(df["VP/Director"].dropna().unique())
+    )
 
-advisor_name = st.sidebar.multiselect(
-    "Advisor Name",
-    sorted(df["Advisor Name"].dropna().unique()),
-    default=None,
-)
+with col2:
+    location = st.multiselect(
+        "📍 Location",
+        sorted(df["Location"].dropna().unique())
+    )
+
+with col3:
+    process = st.multiselect(
+        "⚙️ Process",
+        sorted(df["Process Name"].dropna().unique())
+    )
+
+with col4:
+    advisor_name = st.multiselect(
+        "👤 Advisor Name",
+        sorted(df["Advisor Name"].dropna().unique())
+    )
+
+# ----------------------------
+# Apply Filters
+# ----------------------------
 
 filtered = df.copy()
 
@@ -326,6 +334,7 @@ if filtered.empty:
     st.warning("No data matches the selected filters.")
     st.stop()
 
+st.markdown("---")
 
 # ---------------------------------------------------
 # Day-Level Aggregation (Occupancy and Shrinkage)
