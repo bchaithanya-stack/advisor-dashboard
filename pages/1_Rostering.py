@@ -271,14 +271,11 @@ if df.empty:
     st.error("No data found in the Roster Google Sheet.")
     st.stop()
 
+# 👇 ADD THIS LINE HERE to force all process names to uppercase and remove extra spaces
+if "Process Name" in df.columns:
+    df["Process Name"] = df["Process Name"].astype(str).str.strip().str.upper()
+
 required_cols = {"Process Name", "Location", "VP/Director"}
-missing_cols = required_cols - set(df.columns)
-if missing_cols:
-    st.error(
-        f"❌ The roster sheet is missing expected column(s): {', '.join(sorted(missing_cols))}. "
-        f"Found columns: {', '.join(df.columns)}"
-    )
-    st.stop()
 
 
 # ---------------------------------------------------
@@ -304,6 +301,13 @@ process = st.sidebar.multiselect(
     default=None,
 )
 
+# 👇 FIX: Changed "Advisor Name" to "advisor_name" (no spaces)
+advisor_name = st.sidebar.multiselect(
+    "Advisor Name",
+    sorted(df["Advisor Name"].dropna().unique()),
+    default=None,
+)
+
 filtered = df.copy()
 
 if vp_director:
@@ -315,9 +319,9 @@ if location:
 if process:
     filtered = filtered[filtered["Process Name"].isin(process)]
 
-if filtered.empty:
-    st.warning("No data matches the selected filters.")
-    st.stop()
+# 👇 REMEMBER TO APPLY THE FILTER TO YOUR DATAFRAME AS WELL:
+if advisor_name:
+    filtered = filtered[filtered["Advisor Name"].isin(advisor_name)]
 
 
 # ---------------------------------------------------
