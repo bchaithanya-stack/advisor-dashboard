@@ -459,6 +459,66 @@ st.plotly_chart(fig_present, use_container_width=True)
 
 st.markdown("---")
 
+# =====================================================
+# PROCESS-WISE LOGIN SUMMARY
+# =====================================================
+
+st.markdown("---")
+st.subheader("📊 Process-wise Login Summary")
+
+# Count only Present advisors
+present_df = filtered[filtered["DayStatus"] == "P"].copy()
+
+# Create date column for display
+present_df["Roster Date"] = present_df["Date"].dt.strftime("%d-%b-%Y")
+
+# -------------------------
+# Stacked Bar Chart
+# -------------------------
+fig_process = px.bar(
+    present_df.groupby(["Roster Date", "Process Name"])
+              .size()
+              .reset_index(name="Login Count"),
+    x="Roster Date",
+    y="Login Count",
+    color="Process Name",
+    text="Login Count",
+    title="Day-wise Process Login Count"
+)
+
+fig_process.update_layout(
+    height=500,
+    paper_bgcolor="#1b1b52",
+    plot_bgcolor="#1b1b52",
+    font_color="white",
+    xaxis_title="Date",
+    yaxis_title="Present Count",
+    legend_title="Process",
+)
+
+st.plotly_chart(fig_process, use_container_width=True)
+
+# -------------------------
+# Pivot Table
+# -------------------------
+st.subheader("📋 Day-wise Process Login Matrix")
+
+login_matrix = (
+    present_df.pivot_table(
+        index="Roster Date",
+        columns="Process Name",
+        values="Advisor Name",
+        aggfunc="count",
+        fill_value=0,
+        margins=True,
+        margins_name="Total"
+    )
+)
+
+st.dataframe(
+    login_matrix,
+    use_container_width=True
+)
 
 # ---------------------------------------------------
 # Raw Daily Table
