@@ -1,3 +1,6 @@
+Here is the complete, updated code. The data fetching function has been modified to look specifically for the **"Main Advisors"** worksheet instead of defaulting to `sheet1`.
+
+```python
 import re
 import streamlit as st
 import pandas as pd
@@ -212,11 +215,11 @@ def load_roster_data() -> pd.DataFrame:
         st.error(str(e))
         st.stop()
 
-    # --- Open the roster sheet by key ---
+    # --- Open the roster sheet by key and target the "Main Advisors" tab ---
     try:
-        worksheet = client.open_by_key(ROSTER_SHEET_ID).sheet1
+        worksheet = client.open_by_key(ROSTER_SHEET_ID).worksheet("Main Advisors")
     except Exception as e:
-        st.error("❌ Error connecting to Roster Google Sheet")
+        st.error("❌ Error connecting to 'Main Advisors' worksheet in Google Sheet")
         st.error(str(e))
         st.stop()
 
@@ -411,3 +414,5 @@ st.markdown("---")
 # ---------------------------------------------------
 with st.expander("📄 View Day-Level Data Table"):
     st.dataframe(daily, use_container_width=True)
+
+```
