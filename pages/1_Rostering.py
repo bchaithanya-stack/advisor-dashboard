@@ -139,8 +139,7 @@ label, p {
 # Styled Header Banner matching the screenshot layout
 st.markdown("""
 <div class="main-title">
-    <h1>📊 DPDzero Productivity Dashboard</h1>
-    <p>Performance Analytics</p>
+    <h1>📊 Advisor Rostering Dashboard</h1>
 </div>
 """, unsafe_allow_html=True)
 st.markdown("---")
