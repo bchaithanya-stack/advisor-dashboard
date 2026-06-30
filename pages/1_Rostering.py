@@ -280,62 +280,68 @@ if missing_cols:
 
 
 # =====================================================
-# FILTER SECTION - MAIN CONTENT AREA
+# CASCADING FILTERS
 # =====================================================
 
-st.markdown("## 🔍 Filters & Selection")
-st.markdown("---")
+st.markdown("## 🔍 Filters")
 
-col1, col2, col3, col4 = st.columns(4)
+filtered_df = df.copy()
 
-with col1:
+c1, c2, c3, c4 = st.columns(4)
+
+# ---------------- VP ----------------
+with c1:
     vp_director = st.multiselect(
-        "🏢 VP / Director",
-        sorted(df["VP/Director"].dropna().unique())
+        "VP / Director",
+        sorted(filtered_df["VP/Director"].dropna().unique())
     )
-
-with col2:
-    location = st.multiselect(
-        "📍 Location",
-        sorted(df["Location"].dropna().unique())
-    )
-
-with col3:
-    process = st.multiselect(
-        "⚙️ Process",
-        sorted(df["Process Name"].dropna().unique())
-    )
-
-with col4:
-    advisor_name = st.multiselect(
-        "👤 Advisor Name",
-        sorted(df["Advisor Name"].dropna().unique())
-    )
-
-# ----------------------------
-# Apply Filters
-# ----------------------------
-
-filtered = df.copy()
 
 if vp_director:
-    filtered = filtered[filtered["VP/Director"].isin(vp_director)]
+    filtered_df = filtered_df[
+        filtered_df["VP/Director"].isin(vp_director)
+    ]
+
+# ---------------- Location ----------------
+with c2:
+    location = st.multiselect(
+        "Location",
+        sorted(filtered_df["Location"].dropna().unique())
+    )
 
 if location:
-    filtered = filtered[filtered["Location"].isin(location)]
+    filtered_df = filtered_df[
+        filtered_df["Location"].isin(location)
+    ]
+
+# ---------------- Process ----------------
+with c3:
+    process = st.multiselect(
+        "Process",
+        sorted(filtered_df["Process Name"].dropna().unique())
+    )
 
 if process:
-    filtered = filtered[filtered["Process Name"].isin(process)]
+    filtered_df = filtered_df[
+        filtered_df["Process Name"].isin(process)
+    ]
 
-if advisor_name:
-    filtered = filtered[filtered["Advisor Name"].isin(advisor_name)]
+# ---------------- Advisor ----------------
+with c4:
+    advisor = st.multiselect(
+        "Advisor Name",
+        sorted(filtered_df["Advisor Name"].dropna().unique())
+    )
+
+if advisor:
+    filtered_df = filtered_df[
+        filtered_df["Advisor Name"].isin(advisor)
+    ]
+
+filtered = filtered_df.copy()
 
 if filtered.empty:
-    st.warning("No data matches the selected filters.")
+    st.warning("No data found.")
     st.stop()
-
-st.markdown("---")
-
 # ---------------------------------------------------
 # Day-Level Aggregation (Occupancy and Shrinkage)
 # ---------------------------------------------------
