@@ -9,7 +9,7 @@ from google.oauth2.service_account import Credentials
 # Page Configuration
 # ---------------------------------------------------
 st.set_page_config(
-    page_title="DPDzero Productivity Dashboard",
+    page_title="Advisor Rostering Dashboard",
     page_icon="📊",
     layout="wide"
 )
@@ -139,8 +139,7 @@ label, p {
 # Styled Header Banner matching the screenshot layout
 st.markdown("""
 <div class="main-title">
-    <h1>📊 DPDzero Productivity Dashboard</h1>
-    <p>Performance Analytics</p>
+    <h1>📊 Advisor Rostering Dashboard</h1>
 </div>
 """, unsafe_allow_html=True)
 st.markdown("---")
@@ -213,11 +212,11 @@ def load_roster_data() -> pd.DataFrame:
         st.error(str(e))
         st.stop()
 
-    # --- Open the roster sheet by key ---
+    # --- Open the roster sheet by key and target the "Main Advisors" tab ---
     try:
-        worksheet = client.open_by_key(ROSTER_SHEET_ID).sheet1
+        worksheet = client.open_by_key(ROSTER_SHEET_ID).worksheet("Main Advisors")
     except Exception as e:
-        st.error("❌ Error connecting to Roster Google Sheet")
+        st.error("❌ Error connecting to 'Main Advisors' worksheet in Google Sheet")
         st.error(str(e))
         st.stop()
 
