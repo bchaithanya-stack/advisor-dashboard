@@ -1,3 +1,5 @@
+import re
+
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -20,14 +22,38 @@ st.markdown("---")
 # Config — edit these for your setup
 # ---------------------------------------------------
 ROSTER_SHEET_ID = "1EHenAAvAY8r0foyzURuapQtOhBeAiWifpqYaXj_RYUo"   # ID from the sheet's URL (between /d/ and /edit)
-CREDENTIALS_FILE = "credentials.json"                   # fallback for local dev
+CREDENTIALS_FILE = "credentials.json"                                # fallback for local dev
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
 
-PRESENT_STATUS = "P"  # value in the Status column that counts as "present"
+PRESENT_STATUS = "P"  # exact value in a date cell that counts as "present"
+
+# Columns in the sheet that are NOT dates (everything else is treated as a date column)
+ID_COLUMNS = [
+    "Email ID",
+    "Advisor Name",
+    "Email Id",
+    "New Product",
+    "New Bucket",
+    "Process Status",
+    "Location",
+    "DOJ",
+    "Tenurity In DPD zero",
+    "Status",
+    "VP/Director",
+    "CM",
+    "AM",
+    "TL",
+    "Total Week offs",
+    "Total PL's",
+    "Process Name",
+]
+
+# Pattern that matches the date column headers, e.g. "01/07/2026"
+DATE_COL_PATTERN = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 
 
 # ---------------------------------------------------
@@ -36,8 +62,9 @@ PRESENT_STATUS = "P"  # value in the Status column that counts as "present"
 @st.cache_data(ttl=10)
 def load_roster_data() -> pd.DataFrame:
     """
-    Loads roster/shift data from Google Sheets.
-    Same auth strategy as the main dashboard: st.secrets first, credentials.json fallback.
+    Loads roster/shift data from Google Sheets and reshapes it from wide format
+    (one row per advisor, one column per date) into long format
+    (one row per advisor per date) for filtering and aggregation.
     """
 
     creds = None
@@ -87,12 +114,35 @@ def load_roster_data() -> pd.DataFrame:
         st.error(str(e))
         st.stop()
 
-    df = pd.DataFrame(worksheet.get_all_records())
+    wide_df = pd.DataFrame(worksheet.get_all_records())
 
-    if not df.empty and "Date" in df.columns:
-        df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
+    if wide_df.empty:
+        return wide_df
 
-    return df
+    # --- Identify date columns dynamically (anything matching DD/MM/YYYY) ---
+    date_cols = [c for c in wide_df.columns if DATE_COL_PATTERN.match(str(c).strip())]
+
+    if not date_cols:
+        st.error(
+            "❌ No date columns found in the roster sheet (expected headers like '01/07/2026'). "
+            f"Found columns: {', '.join(wide_df.columns)}"
+        )
+        st.stop()
+
+    # --- Reshape wide -> long: one row per advisor per date ---
+    id_cols_present = [c for c in ID_COLUMNS if c in wide_df.columns]
+
+    long_df = wide_df.melt(
+        id_vars=id_cols_present,
+        value_vars=date_cols,
+        var_name="Date",
+        value_name="DayStatus",
+    )
+
+    long_df["Date"] = pd.to_datetime(long_df["Date"], format="%d/%m/%Y", errors="coerce")
+    long_df["DayStatus"] = long_df["DayStatus"].astype(str).str.strip()
+
+    return long_df
 
 
 # ---------------------------------------------------
@@ -117,7 +167,7 @@ if df.empty:
     )
     st.stop()
 
-required_cols = {"Date", "Status", "Process", "Location", "VP/Director"}
+required_cols = {"Process Name", "Location", "VP/Director"}
 missing_cols = required_cols - set(df.columns)
 if missing_cols:
     st.error(
@@ -145,7 +195,7 @@ location = st.sidebar.multiselect(
 
 process = st.sidebar.multiselect(
     "Process",
-    sorted(df["Process"].dropna().unique()),
+    sorted(df["Process Name"].dropna().unique()),
     default=None,
 )
 
@@ -158,7 +208,7 @@ if location:
     filtered = filtered[filtered["Location"].isin(location)]
 
 if process:
-    filtered = filtered[filtered["Process"].isin(process)]
+    filtered = filtered[filtered["Process Name"].isin(process)]
 
 if filtered.empty:
     st.warning("No data matches the selected filters.")
@@ -170,11 +220,10 @@ if filtered.empty:
 daily = (
     filtered.groupby(filtered["Date"].dt.date)
     .agg(
-        Scheduled=("Status", "size"),
-        Present=("Status", lambda s: (s == PRESENT_STATUS).sum()),
+        Scheduled=("DayStatus", "size"),
+        Present=("DayStatus", lambda s: (s == PRESENT_STATUS).sum()),
     )
     .reset_index()
-    .rename(columns={"Date": "Date"})
 )
 
 daily["Shrinkage %"] = (
