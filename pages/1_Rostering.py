@@ -265,20 +265,18 @@ with refresh_col:
 # ---------------------------------------------------
 # Fetch Data
 # ---------------------------------------------------
+
 df = load_roster_data()
 
 if df.empty:
     st.error("No data found in the Roster Google Sheet.")
     st.stop()
 
+# 👇 ADD THIS LINE HERE to force all process names to uppercase and remove extra spaces
+if "Process Name" in df.columns:
+    df["Process Name"] = df["Process Name"].astype(str).str.strip().str.upper()
+
 required_cols = {"Process Name", "Location", "VP/Director"}
-missing_cols = required_cols - set(df.columns)
-if missing_cols:
-    st.error(
-        f"❌ The roster sheet is missing expected column(s): {', '.join(sorted(missing_cols))}. "
-        f"Found columns: {', '.join(df.columns)}"
-    )
-    st.stop()
 
 
 # ---------------------------------------------------
