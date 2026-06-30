@@ -30,10 +30,133 @@ st.set_page_config(
 
 )
 
+# -----------------------------
+# Premium Dark Theme
+# -----------------------------
+st.markdown("""
+<style>
 
+/* Main App */
+.stApp{
+    background:#0b0b2d;
+    color:white;
+}
 
-st.title("🗓️ Advisor Rostering Dashboard")
+/* Header Card */
+.main-title{
+    background:#1b1b52;
+    padding:30px;
+    border-radius:18px;
+    border:1px solid #4b4bb8;
+    box-shadow:0 0 20px rgba(70,70,255,.15);
+    margin-bottom:25px;
+}
 
+.main-title h1{
+    color:white;
+    margin:0;
+    font-size:42px;
+    font-weight:700;
+}
+
+.main-title p{
+    color:#b8b8d4;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"]{
+    background:#10103a;
+}
+
+/* Metrics */
+[data-testid="metric-container"]{
+    background:#1b1b52;
+    border:1px solid #5050b5;
+    border-radius:15px;
+    padding:18px;
+    box-shadow:0 4px 20px rgba(0,0,0,.25);
+}
+
+[data-testid="metric-container"] label{
+    color:#bfbfff;
+}
+
+[data-testid="metric-container"] div{
+    color:white;
+}
+
+/* Buttons */
+.stButton>button{
+    background:#6366F1;
+    color:white;
+    border:none;
+    border-radius:10px;
+    height:45px;
+    width:100%;
+    font-weight:bold;
+}
+
+.stButton>button:hover{
+    background:#818CF8;
+}
+
+/* Select Boxes */
+.stSelectbox div[data-baseweb="select"]{
+    background:#1b1b52;
+    border-radius:10px;
+}
+
+/* Multiselect */
+.stMultiSelect div[data-baseweb="select"]{
+    background:#1b1b52;
+    border-radius:10px;
+}
+
+/* Dataframe */
+[data-testid="stDataFrame"]{
+    border-radius:12px;
+    overflow:hidden;
+}
+
+/* Expander */
+.streamlit-expanderHeader{
+    background:#1b1b52;
+    border-radius:10px;
+}
+
+/* Divider */
+hr{
+    border:1px solid #333366;
+}
+
+/* Chart background */
+.js-plotly-plot .plotly{
+    border-radius:15px;
+}
+
+/* Radio buttons */
+.stRadio label{
+    color:white;
+}
+
+/* Text */
+h1,h2,h3,h4,h5,h6{
+    color:white;
+}
+
+label,p{
+    color:#d8d8f5;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+st.markdown("""
+<div class="main-title">
+<h1>🗓️ Advisor Rostering Dashboard</h1>
+<p>Performance Analytics</p>
+</div>
+""", unsafe_allow_html=True)
 st.markdown("---")
 
 
@@ -362,7 +485,13 @@ if missing_cols:
 
 st.sidebar.header("🔍 Filters")
 
-
+fig_present.update_layout(
+    paper_bgcolor="#1b1b52",
+    plot_bgcolor="#1b1b52",
+    font_color="white",
+    xaxis=dict(gridcolor="#444466"),
+    yaxis=dict(gridcolor="#444466")
+)
 
 vp_director = st.sidebar.multiselect(
 
@@ -498,7 +627,13 @@ st.markdown("---")
 
 st.subheader("📉 Day-Level Shrinkage %")
 
-
+fig_shrinkage.update_layout(
+    paper_bgcolor="#1b1b52",
+    plot_bgcolor="#1b1b52",
+    font_color="white",
+    xaxis=dict(gridcolor="#444466"),
+    yaxis=dict(gridcolor="#444466")
+)
 
 fig_shrinkage = px.line(
 
@@ -530,7 +665,13 @@ st.markdown("---")
 
 st.subheader("👥 Day-Level Projected Present Count")
 
-
+fig_shrinkage.update_layout(
+    paper_bgcolor="#1b1b52",
+    plot_bgcolor="#1b1b52",
+    font_color="white",
+    xaxis=dict(gridcolor="#444466"),
+    yaxis=dict(gridcolor="#444466")
+)
 
 fig_present = px.bar(
 
