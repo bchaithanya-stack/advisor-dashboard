@@ -1,6 +1,8 @@
-Ah, it looks like my conversational introduction accidentally slipped into your Python file! Python is trying to read that explanation as code, which is what's causing the `SyntaxError`.
+Whoops! It looks like some leftover text from my message is still stuck at the very top of your file.
 
-To fix this, completely erase everything currently in your `1_Rostering.py` file and replace it with **only** the code below:
+To fix this once and for all, open your `1_Rostering.py` file, press **Ctrl+A** (or **Cmd+A** on Mac) to select everything, and hit **Delete** so the file is completely blank.
+
+Then, click the **"Copy"** button on the top-right corner of the code block below and paste *only* this code into your file:
 
 ```python
 import re
