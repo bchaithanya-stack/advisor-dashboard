@@ -136,7 +136,7 @@ label, p {
 </style>
 """, unsafe_allow_html=True)
 
-# Styled Header Banner matching the screenshot layout
+# Styled Header Banner
 st.markdown("""
 <div class="main-title">
     <h1>📊 Advisor Rostering Dashboard</h1>
@@ -146,17 +146,17 @@ st.markdown("---")
 
 
 # ---------------------------------------------------
-# Config — edit these for your setup
+# Config
 # ---------------------------------------------------
-ROSTER_SHEET_ID = "1EHenAAvAY8r0foyzURuapQtOhBeAiWifpqYaXj_RYUo"   # ID from the sheet's URL
-CREDENTIALS_FILE = "credentials.json"                                # fallback for local dev
+ROSTER_SHEET_ID = "1EHenAAvAY8r0foyzURuapQtOhBeAiWifpqYaXj_RYUo"
+CREDENTIALS_FILE = "credentials.json"
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
 
-PRESENT_STATUS = "P"  # exact value in a date cell that counts as "present"
+PRESENT_STATUS = "P"
 
 ID_COLUMNS = [
     "Email ID", "Advisor Name", "Email Id", "New Product",
@@ -175,7 +175,6 @@ DATE_COL_PATTERN = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 def load_roster_data() -> pd.DataFrame:
     creds = None
 
-    # --- 1. Try Streamlit secrets first ---
     if "gcp_service_account" in st.secrets:
         try:
             creds = Credentials.from_service_account_info(
@@ -185,7 +184,6 @@ def load_roster_data() -> pd.DataFrame:
         except Exception as e:
             st.warning(f"⚠️ Found gcp_service_account in secrets, but failed to load it: {e}")
 
-    # --- 2. Fall back to local credentials.json ---
     if creds is None:
         import os
         if not os.path.exists(CREDENTIALS_FILE):
@@ -204,7 +202,6 @@ def load_roster_data() -> pd.DataFrame:
             st.error(str(e))
             st.stop()
 
-    # --- Connect to Google Sheets ---
     try:
         client = gspread.authorize(creds)
     except Exception as e:
@@ -212,7 +209,6 @@ def load_roster_data() -> pd.DataFrame:
         st.error(str(e))
         st.stop()
 
-    # --- Open the roster sheet by key and target the "Main Advisors" tab ---
     try:
         worksheet = client.open_by_key(ROSTER_SHEET_ID).worksheet("Main Advisors")
     except Exception as e:
@@ -225,7 +221,6 @@ def load_roster_data() -> pd.DataFrame:
     if wide_df.empty:
         return wide_df
 
-    # --- Identify date columns dynamically ---
     date_cols = [c for c in wide_df.columns if DATE_COL_PATTERN.match(str(c).strip())]
 
     if not date_cols:
@@ -235,7 +230,6 @@ def load_roster_data() -> pd.DataFrame:
         )
         st.stop()
 
-    # --- Reshape wide -> long ---
     id_cols_present = [c for c in ID_COLUMNS if c in wide_df.columns]
 
     long_df = wide_df.melt(
@@ -263,7 +257,7 @@ with refresh_col:
 
 
 # ---------------------------------------------------
-# Fetch Data
+# Fetch Data & Clean Duplicates
 # ---------------------------------------------------
 df = load_roster_data()
 
@@ -271,15 +265,22 @@ if df.empty:
     st.error("No data found in the Roster Google Sheet.")
     st.stop()
 
-# 👇 ADD THIS LINE HERE to force all process names to uppercase and remove extra spaces
+# Standardize case formatting to eliminate dropdown duplicate options
 if "Process Name" in df.columns:
     df["Process Name"] = df["Process Name"].astype(str).str.strip().str.upper()
 
 required_cols = {"Process Name", "Location", "VP/Director"}
+missing_cols = required_cols - set(df.columns)
+if missing_cols:
+    st.error(
+        f"❌ The roster sheet is missing expected column(s): {', '.join(sorted(missing_cols))}. "
+        f"Found columns: {', '.join(df.columns)}"
+    )
+    st.stop()
 
 
 # ---------------------------------------------------
-# Sidebar Filters
+# Sidebar Filters (No Spaces in Variable Names)
 # ---------------------------------------------------
 st.sidebar.header("🔍 Filters")
 
@@ -301,7 +302,6 @@ process = st.sidebar.multiselect(
     default=None,
 )
 
-# 👇 FIX: Changed "Advisor Name" to "advisor_name" (no spaces)
 advisor_name = st.sidebar.multiselect(
     "Advisor Name",
     sorted(df["Advisor Name"].dropna().unique()),
@@ -319,13 +319,16 @@ if location:
 if process:
     filtered = filtered[filtered["Process Name"].isin(process)]
 
-# 👇 REMEMBER TO APPLY THE FILTER TO YOUR DATAFRAME AS WELL:
 if advisor_name:
     filtered = filtered[filtered["Advisor Name"].isin(advisor_name)]
 
+if filtered.empty:
+    st.warning("No data matches the selected filters.")
+    st.stop()
+
 
 # ---------------------------------------------------
-# Day-Level Aggregation
+# Day-Level Aggregation (Occupancy and Shrinkage)
 # ---------------------------------------------------
 daily = (
     filtered.groupby(filtered["Date"].dt.date)
@@ -336,28 +339,62 @@ daily = (
     .reset_index()
 )
 
+# Calculations
 daily["Shrinkage %"] = (
     (daily["Scheduled"] - daily["Present"]) / daily["Scheduled"] * 100
+).round(2)
+
+daily["Occupancy %"] = (
+    (daily["Present"] / daily["Scheduled"]) * 100
 ).round(2)
 
 daily = daily.sort_values("Date")
 
 
 # ---------------------------------------------------
-# KPI Summary
+# KPI Summary Cards
 # ---------------------------------------------------
-st.subheader("📈 Summary")
+st.subheader("📈 Summary Metrics")
 
-k1, k2, k3 = st.columns(3)
-k1.metric("Avg Daily Shrinkage %", f"{daily['Shrinkage %'].mean():.2f}%")
-k2.metric("Avg Daily Present Count", f"{daily['Present'].mean():.1f}")
-k3.metric("Days in View", len(daily))
+k1, k2, k3, k4 = st.columns(4)
+k1.metric("Avg Daily Occupancy %", f"{daily['Occupancy %'].mean():.2f}%")
+k2.metric("Avg Daily Shrinkage %", f"{daily['Shrinkage %'].mean():.2f}%")
+k3.metric("Avg Daily Present Count", f"{daily['Present'].mean():.1f}")
+k4.metric("Days in View", len(daily))
 
 st.markdown("---")
 
 
 # ---------------------------------------------------
-# Chart 1 — Day-Level Shrinkage %
+# Chart 1 — Day-Level Occupancy %
+# ---------------------------------------------------
+st.subheader("🎯 Day-Level Occupancy % Trend")
+
+fig_occupancy = px.line(
+    daily,
+    x="Date",
+    y="Occupancy %",
+    markers=True,
+    text="Occupancy %"
+)
+
+fig_occupancy.update_traces(textposition="top center")
+fig_occupancy.update_layout(
+    height=420, 
+    yaxis_title="Occupancy %",
+    paper_bgcolor="#1b1b52",
+    plot_bgcolor="#1b1b52",
+    font_color="white",
+    xaxis=dict(gridcolor="#444466"),
+    yaxis=dict(gridcolor="#444466", range=[0, 105])
+)
+st.plotly_chart(fig_occupancy, use_container_width=True)
+
+st.markdown("---")
+
+
+# ---------------------------------------------------
+# Chart 2 — Day-Level Shrinkage %
 # ---------------------------------------------------
 st.subheader("📉 Day-Level Shrinkage %")
 
@@ -368,7 +405,6 @@ fig_shrinkage = px.line(
     markers=True,
 )
 
-# Apply premium dark backgrounds and styling directly to the generated figure
 fig_shrinkage.update_layout(
     height=420, 
     yaxis_title="Shrinkage %",
@@ -384,7 +420,7 @@ st.markdown("---")
 
 
 # ---------------------------------------------------
-# Chart 2 — Day-Level Projected Present Count
+# Chart 3 — Day-Level Projected Present Count
 # ---------------------------------------------------
 st.subheader("👥 Day-Level Projected Present Count")
 
@@ -395,7 +431,6 @@ fig_present = px.bar(
     text="Present",
 )
 
-# Apply premium dark backgrounds and styling directly to the generated figure
 fig_present.update_layout(
     height=420, 
     yaxis_title="Present Count",
