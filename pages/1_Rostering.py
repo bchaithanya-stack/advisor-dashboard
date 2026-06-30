@@ -302,6 +302,18 @@ process = st.sidebar.multiselect(
     default=None,
 )
 
+Advisor Name = st.sidebar.multiselect(
+    "Process",
+    sorted(df["Advisor Name"].dropna().unique()),
+    default=None,
+)
+
+Employee ID = st.sidebar.multiselect(
+    "Process",
+    sorted(df["Employee ID"].dropna().unique()),
+    default=None,
+)
+
 filtered = df.copy()
 
 if vp_director:
@@ -312,6 +324,12 @@ if location:
 
 if process:
     filtered = filtered[filtered["Process Name"].isin(process)]
+
+if Advisor Name:
+    filtered = filtered[filtered["Advisor Name"].isin(process)]
+
+if Employee ID:
+    filtered = filtered[filtered["Employee ID"].isin(process)]
 
 if filtered.empty:
     st.warning("No data matches the selected filters.")
