@@ -1,4 +1,6 @@
-Here is the complete, updated code. The data fetching function has been modified to look specifically for the **"Main Advisors"** worksheet instead of defaulting to `sheet1`.
+Ah, it looks like my conversational introduction accidentally slipped into your Python file! Python is trying to read that explanation as code, which is what's causing the `SyntaxError`.
+
+To fix this, completely erase everything currently in your `1_Rostering.py` file and replace it with **only** the code below:
 
 ```python
 import re
