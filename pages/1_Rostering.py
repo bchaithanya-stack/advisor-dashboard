@@ -1,5 +1,4 @@
 import re
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -10,49 +9,59 @@ from google.oauth2.service_account import Credentials
 # Page Configuration
 # ---------------------------------------------------
 st.set_page_config(
-    page_title="Advisor Rostering Dashboard",
-    page_icon="🗓️",
+    page_title="DPDzero Productivity Dashboard",
+    page_icon="📊",
     layout="wide"
 )
 
-st.title("🗓️ Advisor Rostering Dashboard")
-st.markdown("---")
+# Custom CSS for the Header Banner mimicking the screenshot
+st.markdown("""
+<style>
+.custom-header {
+    background-color: #1B1D40;
+    padding: 24px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    border: 1px solid #2B2D5C;
+}
+.header-title {
+    color: white;
+    font-size: 32px;
+    font-weight: bold;
+    margin-bottom: 5px;
+}
+.header-subtitle {
+    color: #9ba1cc;
+    font-size: 14px;
+}
+</style>
+<div class="custom-header">
+    <div class="header-title">📊 DPDzero Productivity Dashboard</div>
+    <div class="header-subtitle">Performance Analytics</div>
+</div>
+""", unsafe_allow_html=True)
+
 
 # ---------------------------------------------------
 # Config — edit these for your setup
 # ---------------------------------------------------
-ROSTER_SHEET_ID = "1EHenAAvAY8r0foyzURuapQtOhBeAiWifpqYaXj_RYUo"   # ID from the sheet's URL (between /d/ and /edit)
-CREDENTIALS_FILE = "credentials.json"                                # fallback for local dev
+ROSTER_SHEET_ID = "1EHenAAvAY8r0foyzURuapQtOhBeAiWifpqYaXj_RYUo"   
+CREDENTIALS_FILE = "credentials.json"                               
 
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive",
 ]
 
-PRESENT_STATUS = "P"  # exact value in a date cell that counts as "present"
+PRESENT_STATUS = "P"
 
-# Columns in the sheet that are NOT dates (everything else is treated as a date column)
 ID_COLUMNS = [
-    "Email ID",
-    "Advisor Name",
-    "Email Id",
-    "New Product",
-    "New Bucket",
-    "Process Status",
-    "Location",
-    "DOJ",
-    "Tenurity In DPD zero",
-    "Status",
-    "VP/Director",
-    "CM",
-    "AM",
-    "TL",
-    "Total Week offs",
-    "Total PL's",
-    "Process Name",
+    "Email ID", "Advisor Name", "Email Id", "New Product",
+    "New Bucket", "Process Status", "Location", "DOJ",
+    "Tenurity In DPD zero", "Status", "VP/Director", "CM",
+    "AM", "TL", "Total Week offs", "Total PL's", "Process Name",
 ]
 
-# Pattern that matches the date column headers, e.g. "01/07/2026"
 DATE_COL_PATTERN = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 
 
@@ -61,15 +70,7 @@ DATE_COL_PATTERN = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 # ---------------------------------------------------
 @st.cache_data(ttl=10)
 def load_roster_data() -> pd.DataFrame:
-    """
-    Loads roster/shift data from Google Sheets and reshapes it from wide format
-    (one row per advisor, one column per date) into long format
-    (one row per advisor per date) for filtering and aggregation.
-    """
-
     creds = None
-
-    # --- 1. Try Streamlit secrets first ---
     if "gcp_service_account" in st.secrets:
         try:
             creds = Credentials.from_service_account_info(
@@ -79,7 +80,6 @@ def load_roster_data() -> pd.DataFrame:
         except Exception as e:
             st.warning(f"⚠️ Found gcp_service_account in secrets, but failed to load it: {e}")
 
-    # --- 2. Fall back to local credentials.json ---
     if creds is None:
         import os
         if not os.path.exists(CREDENTIALS_FILE):
@@ -98,7 +98,6 @@ def load_roster_data() -> pd.DataFrame:
             st.error(str(e))
             st.stop()
 
-    # --- Connect to Google Sheets ---
     try:
         client = gspread.authorize(creds)
     except Exception as e:
@@ -106,7 +105,6 @@ def load_roster_data() -> pd.DataFrame:
         st.error(str(e))
         st.stop()
 
-    # --- Open the roster sheet by key ---
     try:
         worksheet = client.open_by_key(ROSTER_SHEET_ID).sheet1
     except Exception as e:
@@ -119,7 +117,6 @@ def load_roster_data() -> pd.DataFrame:
     if wide_df.empty:
         return wide_df
 
-    # --- Identify date columns dynamically (anything matching DD/MM/YYYY) ---
     date_cols = [c for c in wide_df.columns if DATE_COL_PATTERN.match(str(c).strip())]
 
     if not date_cols:
@@ -129,7 +126,6 @@ def load_roster_data() -> pd.DataFrame:
         )
         st.stop()
 
-    # --- Reshape wide -> long: one row per advisor per date ---
     id_cols_present = [c for c in ID_COLUMNS if c in wide_df.columns]
 
     long_df = wide_df.melt(
@@ -144,16 +140,16 @@ def load_roster_data() -> pd.DataFrame:
 
     return long_df
 
-
 # ---------------------------------------------------
-# Manual Refresh Button
+# Manual Refresh Button (Right Aligned)
 # ---------------------------------------------------
-refresh_col, _ = st.columns([1, 5])
+_, refresh_col = st.columns([6, 1])
 with refresh_col:
-    if st.button("🔄 Refresh Roster Data"):
+    if st.button("🔄 Refresh", use_container_width=True):
         st.cache_data.clear()
-        st.success("Cache cleared successfully! Fetching new data...")
         st.rerun()
+
+st.markdown("<br>", unsafe_allow_html=True)
 
 # ---------------------------------------------------
 # Fetch Data
@@ -161,54 +157,58 @@ with refresh_col:
 df = load_roster_data()
 
 if df.empty:
-    st.error(
-        "No data found in the Roster Google Sheet. Check the sheet ID, sharing permissions, "
-        "and that the service account has access."
-    )
-    st.stop()
-
-required_cols = {"Process Name", "Location", "VP/Director"}
-missing_cols = required_cols - set(df.columns)
-if missing_cols:
-    st.error(
-        f"❌ The roster sheet is missing expected column(s): {', '.join(sorted(missing_cols))}. "
-        f"Found columns: {', '.join(df.columns)}"
-    )
+    st.error("No data found in the Roster Google Sheet.")
     st.stop()
 
 # ---------------------------------------------------
-# Sidebar Filters
+# Main View Filters & Selection
 # ---------------------------------------------------
-st.sidebar.header("🔍 Filters")
+st.markdown("### 🔍 Filters & Selection")
 
-vp_director = st.sidebar.multiselect(
-    "VP / Director",
-    sorted(df["VP/Director"].dropna().unique()),
-    default=None,
+view_type = st.radio(
+    "Select View Type:",
+    ["Advisor View", "Support Staff View", "Overall View", "Management Summary"],
+    horizontal=True,
+    label_visibility="collapsed" # Hides the label so it looks exactly like the image
 )
 
-location = st.sidebar.multiselect(
-    "Location",
-    sorted(df["Location"].dropna().unique()),
-    default=None,
-)
+st.markdown("<br>**Advisor View - Select Filters Below:**", unsafe_allow_html=True)
 
-process = st.sidebar.multiselect(
-    "Process",
-    sorted(df["Process Name"].dropna().unique()),
-    default=None,
-)
+# Layout for dropdowns
+f1, f2, f3, f4 = st.columns(4)
 
+with f1:
+    process_options = ["All"] + sorted(df["Process Name"].dropna().unique().tolist()) if "Process Name" in df.columns else ["All"]
+    process = st.selectbox("🔹 Process:", process_options)
+
+with f2:
+    location_options = ["All"] + sorted(df["Location"].dropna().unique().tolist()) if "Location" in df.columns else ["All"]
+    location = st.selectbox("🔹 Location:", location_options)
+
+with f3:
+    # Assuming 'Email ID' serves as Employee ID in your data
+    emp_id_options = ["All"] + sorted(df["Email ID"].dropna().unique().tolist()) if "Email ID" in df.columns else ["All"]
+    emp_id = st.selectbox("🔹 Employee ID:", emp_id_options)
+
+with f4:
+    advisor_options = ["All"] + sorted(df["Advisor Name"].dropna().unique().tolist()) if "Advisor Name" in df.columns else ["All"]
+    adv_name = st.selectbox("🔹 Advisor Name:", advisor_options)
+
+st.markdown("---")
+
+# ---------------------------------------------------
+# Apply Filters
+# ---------------------------------------------------
 filtered = df.copy()
 
-if vp_director:
-    filtered = filtered[filtered["VP/Director"].isin(vp_director)]
-
-if location:
-    filtered = filtered[filtered["Location"].isin(location)]
-
-if process:
-    filtered = filtered[filtered["Process Name"].isin(process)]
+if process != "All":
+    filtered = filtered[filtered["Process Name"] == process]
+if location != "All":
+    filtered = filtered[filtered["Location"] == location]
+if emp_id != "All" and "Email ID" in filtered.columns:
+    filtered = filtered[filtered["Email ID"] == emp_id]
+if adv_name != "All" and "Advisor Name" in filtered.columns:
+    filtered = filtered[filtered["Advisor Name"] == adv_name]
 
 if filtered.empty:
     st.warning("No data matches the selected filters.")
