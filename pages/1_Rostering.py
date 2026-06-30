@@ -1,5 +1,4 @@
 import re
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -10,18 +9,147 @@ from google.oauth2.service_account import Credentials
 # Page Configuration
 # ---------------------------------------------------
 st.set_page_config(
-    page_title="Advisor Rostering Dashboard",
-    page_icon="🗓️",
+    page_title="DPDzero Productivity Dashboard",
+    page_icon="📊",
     layout="wide"
 )
 
-st.title("🗓️ Advisor Rostering Dashboard")
+# -----------------------------
+# Premium Dark Theme CSS
+# -----------------------------
+st.markdown("""
+<style>
+
+/* Main App */
+.stApp {
+    background: #0b0b2d;
+    color: white;
+}
+
+/* Header Card */
+.main-title {
+    background: #1b1b52;
+    padding: 30px;
+    border-radius: 18px;
+    border: 1px solid #4b4bb8;
+    box-shadow: 0 0 20px rgba(70,70,255,.15);
+    margin-bottom: 25px;
+}
+
+.main-title h1 {
+    color: white;
+    margin: 0;
+    font-size: 42px;
+    font-weight: 700;
+}
+
+.main-title p {
+    color: #b8b8d4;
+    margin: 5px 0 0 0;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background: #10103a;
+}
+
+/* Metrics */
+[data-testid="metric-container"] {
+    background: #1b1b52;
+    border: 1px solid #5050b5;
+    border-radius: 15px;
+    padding: 18px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.25);
+}
+
+[data-testid="metric-container"] label {
+    color: #bfbfff;
+}
+
+[data-testid="metric-container"] div {
+    color: white;
+}
+
+/* Buttons */
+.stButton>button {
+    background: #6366F1;
+    color: white;
+    border: none;
+    border-radius: 10px;
+    height: 45px;
+    width: 100%;
+    font-weight: bold;
+}
+
+.stButton>button:hover {
+    background: #818CF8;
+}
+
+/* Select Boxes */
+.stSelectbox div[data-baseweb="select"] {
+    background: #1b1b52;
+    border-radius: 10px;
+}
+
+/* Multiselect */
+.stMultiSelect div[data-baseweb="select"] {
+    background: #1b1b52;
+    border-radius: 10px;
+}
+
+/* Dataframe */
+[data-testid="stDataFrame"] {
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+/* Expander */
+.streamlit-expanderHeader {
+    background: #1b1b52;
+    border-radius: 10px;
+}
+
+/* Divider */
+hr {
+    border: 1px solid #333366;
+}
+
+/* Chart background */
+.js-plotly-plot .plotly {
+    border-radius: 15px;
+}
+
+/* Radio buttons */
+.stRadio label {
+    color: white;
+}
+
+/* Text */
+h1, h2, h3, h4, h5, h6 {
+    color: white;
+}
+
+label, p {
+    color: #d8d8f5;
+}
+
+</style>
+""", unsafe_allow_html=True)
+
+# Styled Header Banner matching the screenshot layout
+st.markdown("""
+<div class="main-title">
+    <h1>📊 DPDzero Productivity Dashboard</h1>
+    <p>Performance Analytics</p>
+</div>
+""", unsafe_allow_html=True)
 st.markdown("---")
+
 
 # ---------------------------------------------------
 # Config — edit these for your setup
 # ---------------------------------------------------
-ROSTER_SHEET_ID = "1EHenAAvAY8r0foyzURuapQtOhBeAiWifpqYaXj_RYUo"   # ID from the sheet's URL (between /d/ and /edit)
+ROSTER_SHEET_ID = "1EHenAAvAY8r0foyzURuapQtOhBeAiWifpqYaXj_RYUo"   # ID from the sheet's URL
 CREDENTIALS_FILE = "credentials.json"                                # fallback for local dev
 
 SCOPES = [
@@ -31,28 +159,13 @@ SCOPES = [
 
 PRESENT_STATUS = "P"  # exact value in a date cell that counts as "present"
 
-# Columns in the sheet that are NOT dates (everything else is treated as a date column)
 ID_COLUMNS = [
-    "Email ID",
-    "Advisor Name",
-    "Email Id",
-    "New Product",
-    "New Bucket",
-    "Process Status",
-    "Location",
-    "DOJ",
-    "Tenurity In DPD zero",
-    "Status",
-    "VP/Director",
-    "CM",
-    "AM",
-    "TL",
-    "Total Week offs",
-    "Total PL's",
-    "Process Name",
+    "Email ID", "Advisor Name", "Email Id", "New Product",
+    "New Bucket", "Process Status", "Location", "DOJ",
+    "Tenurity In DPD zero", "Status", "VP/Director", "CM",
+    "AM", "TL", "Total Week offs", "Total PL's", "Process Name",
 ]
 
-# Pattern that matches the date column headers, e.g. "01/07/2026"
 DATE_COL_PATTERN = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 
 
@@ -61,12 +174,6 @@ DATE_COL_PATTERN = re.compile(r"^\d{2}/\d{2}/\d{4}$")
 # ---------------------------------------------------
 @st.cache_data(ttl=10)
 def load_roster_data() -> pd.DataFrame:
-    """
-    Loads roster/shift data from Google Sheets and reshapes it from wide format
-    (one row per advisor, one column per date) into long format
-    (one row per advisor per date) for filtering and aggregation.
-    """
-
     creds = None
 
     # --- 1. Try Streamlit secrets first ---
@@ -119,7 +226,7 @@ def load_roster_data() -> pd.DataFrame:
     if wide_df.empty:
         return wide_df
 
-    # --- Identify date columns dynamically (anything matching DD/MM/YYYY) ---
+    # --- Identify date columns dynamically ---
     date_cols = [c for c in wide_df.columns if DATE_COL_PATTERN.match(str(c).strip())]
 
     if not date_cols:
@@ -129,7 +236,7 @@ def load_roster_data() -> pd.DataFrame:
         )
         st.stop()
 
-    # --- Reshape wide -> long: one row per advisor per date ---
+    # --- Reshape wide -> long ---
     id_cols_present = [c for c in ID_COLUMNS if c in wide_df.columns]
 
     long_df = wide_df.melt(
@@ -155,16 +262,14 @@ with refresh_col:
         st.success("Cache cleared successfully! Fetching new data...")
         st.rerun()
 
+
 # ---------------------------------------------------
 # Fetch Data
 # ---------------------------------------------------
 df = load_roster_data()
 
 if df.empty:
-    st.error(
-        "No data found in the Roster Google Sheet. Check the sheet ID, sharing permissions, "
-        "and that the service account has access."
-    )
+    st.error("No data found in the Roster Google Sheet.")
     st.stop()
 
 required_cols = {"Process Name", "Location", "VP/Director"}
@@ -175,6 +280,7 @@ if missing_cols:
         f"Found columns: {', '.join(df.columns)}"
     )
     st.stop()
+
 
 # ---------------------------------------------------
 # Sidebar Filters
@@ -214,6 +320,7 @@ if filtered.empty:
     st.warning("No data matches the selected filters.")
     st.stop()
 
+
 # ---------------------------------------------------
 # Day-Level Aggregation
 # ---------------------------------------------------
@@ -232,6 +339,7 @@ daily["Shrinkage %"] = (
 
 daily = daily.sort_values("Date")
 
+
 # ---------------------------------------------------
 # KPI Summary
 # ---------------------------------------------------
@@ -244,6 +352,7 @@ k3.metric("Days in View", len(daily))
 
 st.markdown("---")
 
+
 # ---------------------------------------------------
 # Chart 1 — Day-Level Shrinkage %
 # ---------------------------------------------------
@@ -255,10 +364,21 @@ fig_shrinkage = px.line(
     y="Shrinkage %",
     markers=True,
 )
-fig_shrinkage.update_layout(height=420, yaxis_title="Shrinkage %")
+
+# Apply premium dark backgrounds and styling directly to the generated figure
+fig_shrinkage.update_layout(
+    height=420, 
+    yaxis_title="Shrinkage %",
+    paper_bgcolor="#1b1b52",
+    plot_bgcolor="#1b1b52",
+    font_color="white",
+    xaxis=dict(gridcolor="#444466"),
+    yaxis=dict(gridcolor="#444466")
+)
 st.plotly_chart(fig_shrinkage, use_container_width=True)
 
 st.markdown("---")
+
 
 # ---------------------------------------------------
 # Chart 2 — Day-Level Projected Present Count
@@ -271,10 +391,21 @@ fig_present = px.bar(
     y="Present",
     text="Present",
 )
-fig_present.update_layout(height=420, yaxis_title="Present Count")
+
+# Apply premium dark backgrounds and styling directly to the generated figure
+fig_present.update_layout(
+    height=420, 
+    yaxis_title="Present Count",
+    paper_bgcolor="#1b1b52",
+    plot_bgcolor="#1b1b52",
+    font_color="white",
+    xaxis=dict(gridcolor="#444466"),
+    yaxis=dict(gridcolor="#444466")
+)
 st.plotly_chart(fig_present, use_container_width=True)
 
 st.markdown("---")
+
 
 # ---------------------------------------------------
 # Raw Daily Table
