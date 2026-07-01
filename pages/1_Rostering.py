@@ -292,7 +292,7 @@ c1, c2, c3, c4 = st.columns(4)
 # ---------------- VP ----------------
 with c1:
     vp_director = st.multiselect(
-        "VP / Director",
+        "POD Leader",
         sorted(filtered_df["VP/Director"].dropna().unique())
     )
 
