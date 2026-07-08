@@ -2,18 +2,17 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-import graphviz
+import plotly.graph_objects as go
 
 # ---------------------------------------------------
 # Page Configuration
 # ---------------------------------------------------
 st.set_page_config(
-    page_title="Organization Structure",
-    page_icon="🕸️",
+    page_title="Hierarchy Rollup Summary",
+    page_icon="🧮",
     layout="wide"
 )
 
-# Premium Dark Theme CSS Matching your Roster Dashboard
 st.markdown("""
 <style>
 .stApp { background: #0b0b2d; color: white; }
@@ -24,8 +23,7 @@ st.markdown("""
 }
 .main-title h1 { color: white; margin: 0; font-size: 42px; font-weight: 700; }
 section[data-testid="stSidebar"] { background: #10103a; }
-.stMultiSelect div[data-baseweb="select"] { background: #1b1b52; border-radius: 10px; }
-div[data-testid="stExpander"] { background: #1b1b52; border-radius: 10px; }
+.stSelectbox div[data-baseweb="select"] { background: #1b1b52; border-radius: 10px; }
 h1, h2, h3, h4 { color: white; }
 label, p { color: #d8d8f5; }
 </style>
@@ -33,7 +31,7 @@ label, p { color: #d8d8f5; }
 
 st.markdown("""
 <div class="main-title">
-    <h1>🕸️ Operational Org Structure Chart</h1>
+    <h1>🧮 POD / CM / AM / TL Rollup Summary</h1>
 </div>
 """, unsafe_allow_html=True)
 st.markdown("---")
@@ -65,20 +63,14 @@ def load_org_data():
 
     try:
         client = gspread.authorize(creds)
-
-        # Target the specific "Mapping" worksheet tab
         worksheet = client.open_by_key(ORG_SHEET_ID).worksheet("Mapping")
-
-        # Fetch raw values as a list of lists to bypass strict duplicate header dictionary limitations
         raw_data = worksheet.get_all_values()
 
         if not raw_data:
             return pd.DataFrame()
 
-        # Extract headers and data split rows
         headers = raw_data[0]
         data_rows = raw_data[1:]
-
         df = pd.DataFrame(data_rows, columns=headers)
         return df
 
@@ -87,171 +79,154 @@ def load_org_data():
         st.stop()
 
 
-# Load Data
 df_org = load_org_data()
 
-# Ensure numeric parsing works correctly for downstream math
 if "Team_Size" in df_org.columns:
     df_org["Team_Size"] = pd.to_numeric(df_org["Team_Size"], errors="coerce").fillna(0).astype(int)
 
-# Expecting columns like:
-# POD_Leader, POD_Leader_Title, Collection_Manager, Collection_Manager_Title,
-# Assistant_Manager, Assistant_Manager_Title, Team_Lead, Team_Lead_Title,
-# Name, Title/Process, Location, Team_Size
-# Adjust the LEVEL_COLS list below to match your actual sheet headers.
-
 # ---------------------------------------------------
-# Sidebar Filtering Setup
+# Column mapping — edit these to match your "Mapping" tab headers exactly
 # ---------------------------------------------------
-st.sidebar.header("🔍 Structure Scope")
+COL_POD = "POD_Leader"
+COL_CM = "Collection_Manager"
+COL_AM = "Assistant_Manager"
+COL_TL = "Team_Lead"
+COL_SIZE = "Team_Size"
 
-if "Location" in df_org.columns:
-    locations = st.sidebar.multiselect("Filter Location", sorted(df_org["Location"].dropna().unique()))
-else:
-    locations = []
-
-if "Process" in df_org.columns:
-    processes = st.sidebar.multiselect("Filter Process", sorted(df_org["Process"].dropna().unique()))
-else:
-    processes = []
-
-if "POD_Leader" in df_org.columns:
-    processes = st.sidebar.multiselect("Filter POD_Leader", sorted(df_org["POD_Leader"].dropna().unique()))
-else:
-    processes = []
-
-filtered_org = df_org.copy()
-if locations:
-    filtered_org = filtered_org[filtered_org["Location"].isin(locations)]
-if processes:
-    filtered_org = filtered_org[filtered_org["Process"].isin(processes)]
- if processes:
-    filtered_org = filtered_org[filtered_org["POD_Leader"].isin(processes)]
-
-if filtered_org.empty:
-    st.warning("No structure paths match your selected filters.")
+required_cols = [COL_POD, COL_CM, COL_AM, COL_TL, COL_SIZE]
+missing = [c for c in required_cols if c not in df_org.columns]
+if missing:
+    st.error(f"❌ Missing expected column(s) in the sheet: {missing}. "
+             f"Update COL_POD / COL_CM / COL_AM / COL_TL / COL_SIZE at the top of the script to match your headers.")
     st.stop()
 
 # ---------------------------------------------------
-# Card-Based Org Chart (Graphviz)
+# Sidebar: choose scope level and specific entity
 # ---------------------------------------------------
-st.subheader("🗂️ Organization Hierarchy")
+st.sidebar.header("🔍 Rollup Scope")
 
-# Columns that define the reporting chain, from top to bottom.
-# Each tuple is (name_column, title_column). Edit these to match your sheet.
-LEVEL_COLS = [
-    ("POD_Leader", "POD_Leader_Title"),
-    ("Collection_Manager", "Collection_Manager_Title"),
-    ("Assistant_Manager", "Assistant_Manager_Title"),
-    ("Team_Lead", "Team_Lead_Title"),
-]
-# Final leaf level: the individual contributor / process row itself
-LEAF_COL = ("Team_Lead", "Process")  # fallback if no separate "Name" column exists
-if "Name" in filtered_org.columns:
-    LEAF_COL = ("Name", "Process")
+view_level = st.sidebar.radio(
+    "View by",
+    ["POD Leader wise", "Collection Manager wise", "Assistant Manager wise", "Team Lead wise"]
+)
 
+level_col_map = {
+    "POD Leader wise": COL_POD,
+    "Collection Manager wise": COL_CM,
+    "Assistant Manager wise": COL_AM,
+    "Team Lead wise": COL_TL,
+}
+scope_col = level_col_map[view_level]
 
-def build_hierarchy_edges(df: pd.DataFrame):
-    """Walk each row and collect parent->child links plus node titles/counts."""
-    edges = set()
-    node_titles = {}
-    node_counts = {}
+entity_options = sorted(df_org[scope_col].dropna().unique())
+entity_options = [e for e in entity_options if str(e).strip() and str(e).lower() != "nan"]
 
-    for _, row in df.iterrows():
-        chain = []
-        for name_col, title_col in LEVEL_COLS:
-            if name_col in df.columns:
-                name_val = str(row.get(name_col, "")).strip()
-                title_val = str(row.get(title_col, "")).strip() if title_col in df.columns else ""
-                if name_val and name_val.lower() != "nan":
-                    chain.append((name_val, title_val))
+selected_entity = st.sidebar.selectbox(f"Select {scope_col.replace('_', ' ')}", entity_options)
 
-        # Leaf node (the actual person / process on this row)
-        leaf_name_col, leaf_title_col = LEAF_COL
-        leaf_name = str(row.get(leaf_name_col, "")).strip()
-        leaf_title = str(row.get(leaf_title_col, "")).strip() if leaf_title_col in df.columns else ""
-        if leaf_name and leaf_name.lower() != "nan" and (not chain or leaf_name != chain[-1][0]):
-            chain.append((leaf_name, leaf_title))
+scoped_df = df_org[df_org[scope_col] == selected_entity]
 
-        # Register titles
-        for name_val, title_val in chain:
-            if name_val not in node_titles or not node_titles[name_val]:
-                node_titles[name_val] = title_val
+if scoped_df.empty:
+    st.warning("No data found for this selection.")
+    st.stop()
 
-        # Register edges + headcount rollup at the last node
-        for i in range(len(chain) - 1):
-            edges.add((chain[i][0], chain[i + 1][0]))
+# ---------------------------------------------------
+# Build funnel steps depending on the chosen level
+# (mirrors the whiteboard: POD_leader -> No.of CM's -> No.of AM's -> No.of TL's -> Total Size)
+# ---------------------------------------------------
+funnel_labels = []
+funnel_values = []
 
-        if chain:
-            last_name = chain[-1][0]
-            node_counts[last_name] = node_counts.get(last_name, 0) + int(row.get("Team_Size", 1) or 1)
+def nunique_clean(series):
+    return series.dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique()
 
-    return edges, node_titles, node_counts
+if scope_col == COL_POD:
+    funnel_labels = [
+        f"POD Leader: {selected_entity}",
+        "No. of CM's",
+        "No. of AM's",
+        "No. of TL's",
+        "Total Size",
+    ]
+    funnel_values = [
+        1,
+        nunique_clean(scoped_df[COL_CM]),
+        nunique_clean(scoped_df[COL_AM]),
+        nunique_clean(scoped_df[COL_TL]),
+        int(scoped_df[COL_SIZE].sum()),
+    ]
 
+elif scope_col == COL_CM:
+    funnel_labels = [
+        f"CM: {selected_entity}",
+        "No. of AM's",
+        "No. of TL's",
+        "Total Size",
+    ]
+    funnel_values = [
+        1,
+        nunique_clean(scoped_df[COL_AM]),
+        nunique_clean(scoped_df[COL_TL]),
+        int(scoped_df[COL_SIZE].sum()),
+    ]
 
-edges, node_titles, node_counts = build_hierarchy_edges(filtered_org)
+elif scope_col == COL_AM:
+    funnel_labels = [
+        f"AM: {selected_entity}",
+        "No. of TL's",
+        "Total Size",
+    ]
+    funnel_values = [
+        1,
+        nunique_clean(scoped_df[COL_TL]),
+        int(scoped_df[COL_SIZE].sum()),
+    ]
 
-if not edges and not node_titles:
-    st.info("No hierarchy columns found matching LEVEL_COLS — update the column names in the script to match your sheet headers.")
-else:
-    dot = graphviz.Digraph()
-    dot.attr(
-        rankdir="TB",
-        bgcolor="#0b0b2d",
-        splines="ortho",
-        nodesep="0.4",
-        ranksep="0.9",
-    )
-    dot.attr(
-        "node",
-        shape="box",
-        style="rounded,filled",
-        fillcolor="#1b1b52",
-        fontcolor="white",
-        color="#e8a33d",
-        penwidth="2",
-        fontname="Helvetica",
-        fontsize="12",
-        margin="0.25,0.18",
-    )
-    dot.attr("edge", color="#8888c0", penwidth="1.4", arrowhead="none")
+else:  # Team Lead wise — bottom of the hierarchy, just the headcount under this TL
+    funnel_labels = [
+        f"TL: {selected_entity}",
+        "Total Size",
+    ]
+    funnel_values = [
+        1,
+        int(scoped_df[COL_SIZE].sum()),
+    ]
 
-    all_nodes = set(node_titles.keys())
-    for a, b in edges:
-        all_nodes.add(a)
-        all_nodes.add(b)
+# ---------------------------------------------------
+# Funnel chart
+# ---------------------------------------------------
+st.subheader(f"📉 Rollup Funnel — {view_level}: {selected_entity}")
 
-    for node in all_nodes:
-        title = node_titles.get(node, "")
-        count = node_counts.get(node)
-        label_lines = [f"<B>{node}</B>"]
-        if title:
-            label_lines.append(f'<FONT POINT-SIZE="10" COLOR="#c9c9ee">{title}</FONT>')
-        if count:
-            label_lines.append(f'<FONT POINT-SIZE="10" COLOR="#e8a33d">Team size: {count}</FONT>')
-        label = "<" + "<BR/>".join(label_lines) + ">"
-        dot.node(node, label=label)
+fig = go.Figure(go.Funnel(
+    y=funnel_labels,
+    x=funnel_values,
+    textinfo="value+text",
+    marker=dict(color=["#e8a33d", "#4b8bf5", "#7a5cf0", "#3ac6a0", "#f06a6a"][:len(funnel_labels)]),
+    connector=dict(line=dict(color="#8888c0", width=2)),
+))
 
-    for a, b in edges:
-        dot.edge(a, b)
+fig.update_layout(
+    height=500,
+    paper_bgcolor="#0b0b2d",
+    plot_bgcolor="#0b0b2d",
+    font_color="white",
+    margin=dict(l=20, r=20, t=20, b=20),
+)
 
-    st.graphviz_chart(dot, use_container_width=True)
+st.plotly_chart(fig, use_container_width=True)
+
+# ---------------------------------------------------
+# Metrics row (quick glance numbers)
+# ---------------------------------------------------
+cols = st.columns(len(funnel_labels))
+for c, label, value in zip(cols, funnel_labels, funnel_values):
+    c.metric(label, value)
 
 st.markdown("---")
 
 # ---------------------------------------------------
-# Nested Team Breakdown Matrix Data View
+# Underlying detail rows for this scope
 # ---------------------------------------------------
-st.subheader("📋 Drill-Down Matrix Details")
+st.subheader("📋 Underlying Roster for this Scope")
 
-display_cols = [c for c in
-                 ["Location", "POD_Leader", "Collection_Manager", "Assistant_Manager",
-                  "Team_Lead", "Name", "Process", "Team_Size"]
-                 if c in filtered_org.columns]
-
-with st.expander("📄 View Operational Matrix Roster", expanded=True):
-    sort_cols = [c for c in ["POD_Leader", "Collection_Manager"] if c in filtered_org.columns]
-    display_df = filtered_org[display_cols]
-    if sort_cols:
-        display_df = display_df.sort_values(by=sort_cols)
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
+detail_cols = [c for c in [COL_POD, COL_CM, COL_AM, COL_TL, COL_SIZE] if c in scoped_df.columns]
+st.dataframe(scoped_df[detail_cols], use_container_width=True, hide_index=True)
