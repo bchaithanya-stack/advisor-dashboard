@@ -132,12 +132,28 @@ if scoped_df.empty:
 # ---------------------------------------------------
 # Build funnel steps depending on the chosen level
 # (mirrors the whiteboard: POD_leader -> No.of CM's -> No.of AM's -> No.of TL's -> Total Size)
+# Each stage also carries the actual member names, so hovering shows the list.
 # ---------------------------------------------------
 funnel_labels = []
 funnel_values = []
+funnel_members = []  # list of lists — names to show on hover for each stage
 
 def nunique_clean(series):
     return series.dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique()
+
+def unique_names(series):
+    vals = series.dropna().astype(str).str.strip()
+    vals = vals[vals != ""]
+    return sorted(vals.unique().tolist())
+
+def hover_text(names, max_show=25):
+    if not names:
+        return "No members"
+    shown = names[:max_show]
+    text = "<br>".join(shown)
+    if len(names) > max_show:
+        text += f"<br>...and {len(names) - max_show} more"
+    return text
 
 if scope_col == COL_POD:
     funnel_labels = [
@@ -154,6 +170,13 @@ if scope_col == COL_POD:
         nunique_clean(scoped_df[COL_TL]),
         int(scoped_df[COL_SIZE].sum()),
     ]
+    funnel_members = [
+        [selected_entity],
+        unique_names(scoped_df[COL_CM]),
+        unique_names(scoped_df[COL_AM]),
+        unique_names(scoped_df[COL_TL]),
+        unique_names(scoped_df.get("Name", scoped_df[COL_TL])),
+    ]
 
 elif scope_col == COL_CM:
     funnel_labels = [
@@ -168,6 +191,12 @@ elif scope_col == COL_CM:
         nunique_clean(scoped_df[COL_TL]),
         int(scoped_df[COL_SIZE].sum()),
     ]
+    funnel_members = [
+        [selected_entity],
+        unique_names(scoped_df[COL_AM]),
+        unique_names(scoped_df[COL_TL]),
+        unique_names(scoped_df.get("Name", scoped_df[COL_TL])),
+    ]
 
 elif scope_col == COL_AM:
     funnel_labels = [
@@ -180,6 +209,11 @@ elif scope_col == COL_AM:
         nunique_clean(scoped_df[COL_TL]),
         int(scoped_df[COL_SIZE].sum()),
     ]
+    funnel_members = [
+        [selected_entity],
+        unique_names(scoped_df[COL_TL]),
+        unique_names(scoped_df.get("Name", scoped_df[COL_TL])),
+    ]
 
 else:  # Team Lead wise — bottom of the hierarchy, just the headcount under this TL
     funnel_labels = [
@@ -190,22 +224,32 @@ else:  # Team Lead wise — bottom of the hierarchy, just the headcount under th
         1,
         int(scoped_df[COL_SIZE].sum()),
     ]
+    funnel_members = [
+        [selected_entity],
+        unique_names(scoped_df.get("Name", scoped_df[COL_TL])),
+    ]
+
+hover_texts = [hover_text(names) for names in funnel_members]
 
 # ---------------------------------------------------
-# Funnel chart
+# Funnel chart — horizontal orientation, hover reveals member names
 # ---------------------------------------------------
 st.subheader(f"📉 Rollup Funnel — {view_level}: {selected_entity}")
 
 fig = go.Figure(go.Funnel(
     y=funnel_labels,
     x=funnel_values,
+    orientation="h",
     textinfo="value+text",
+    hovertext=hover_texts,
+    hoverinfo="text",
+    hovertemplate="<b>%{y}</b><br>%{hovertext}<extra></extra>",
     marker=dict(color=["#e8a33d", "#4b8bf5", "#7a5cf0", "#3ac6a0", "#f06a6a"][:len(funnel_labels)]),
     connector=dict(line=dict(color="#8888c0", width=2)),
 ))
 
 fig.update_layout(
-    height=500,
+    height=450,
     paper_bgcolor="#0b0b2d",
     plot_bgcolor="#0b0b2d",
     font_color="white",
@@ -213,6 +257,7 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
+st.caption("Hover over any bar to see the member names in that stage.")
 
 # ---------------------------------------------------
 # Metrics row (quick glance numbers)
