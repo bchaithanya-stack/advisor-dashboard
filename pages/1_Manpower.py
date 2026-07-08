@@ -175,44 +175,93 @@ all_children = {b for a, b in edges}
 roots = sorted(all_nodes - all_children)
 
 # ---------------------------------------------------
-# Layout: x from column order, y from recursive averaging
-# (parents centered vertically over their children)
+# Layout: x from column order. y is computed in two passes —
+# an initial bottom-up average, then a per-column collision pass
+# (deepest column first) so nodes that share a child (e.g. two
+# Locations feeding the same CM) never land on the exact same y
+# and overlap.
 # ---------------------------------------------------
 col_index = {col: i for i, col in enumerate(LEVEL_COLS)}
-y_memo = {}
+
+# Pass 1: rough leaf ordering (stable left-to-right order only)
+y_raw = {}
 leaf_counter = [0]
 
 
-def compute_y(node):
-    if node in y_memo:
-        return y_memo[node]
+def compute_raw(node):
+    if node in y_raw:
+        return y_raw[node]
     children = sorted(parent_children.get(node, []))
     if not children:
         y = float(leaf_counter[0])
         leaf_counter[0] += 1
     else:
-        ys = [compute_y(c) for c in children]
+        ys = [compute_raw(c) for c in children]
         y = sum(ys) / len(ys)
-    y_memo[node] = y
+    y_raw[node] = y
     return y
 
 
 for r in roots:
-    compute_y(r)
-
-# Any node reachable only as a child but somehow not yet visited (safety net)
+    compute_raw(r)
 for n in all_nodes:
-    if n not in y_memo:
-        compute_y(n)
+    if n not in y_raw:
+        compute_raw(n)
 
-X_SPACING = 260
+# Pass 2: column-by-column, deepest to shallowest, enforce a minimum
+# gap between siblings in the same column so nothing overlaps.
+from collections import defaultdict as _defaultdict
+
+columns_by_index = _defaultdict(list)
+for n in all_nodes:
+    col_name = n.split("::", 1)[0]
+    columns_by_index[col_index.get(col_name, 0)].append(n)
+
+max_col_idx = max(columns_by_index.keys()) if columns_by_index else 0
+y_final = {}
+MIN_GAP = 1.0
+
+for col in range(max_col_idx, -1, -1):
+    nodes_in_col = columns_by_index.get(col, [])
+    if not nodes_in_col:
+        continue
+
+    def _raw_for(n):
+        children = parent_children.get(n, [])
+        if children:
+            return sum(y_final[c] for c in children) / len(children)
+        return y_raw[n]
+
+    nodes_sorted = sorted(nodes_in_col, key=lambda n: (_raw_for(n), n))
+    prev_y = None
+    for n in nodes_sorted:
+        candidate = _raw_for(n)
+        y_final[n] = candidate if prev_y is None else max(candidate, prev_y + MIN_GAP)
+        prev_y = y_final[n]
+
+X_SPACING = 300
 Y_SPACING = 70
 positions = {}
 for node in all_nodes:
     col_name = node.split("::", 1)[0]
     x = col_index.get(col_name, 0) * X_SPACING
-    y = y_memo[node] * Y_SPACING
+    y = y_final[node] * Y_SPACING
     positions[node] = (x, y)
+
+
+def wrap_label(name, max_chars=20):
+    """Wrap long names onto a second line at the nearest space instead of truncating."""
+    if len(name) <= max_chars:
+        return name, False
+    mid = len(name) // 2
+    left_space = name.rfind(" ", 0, mid)
+    right_space = name.find(" ", mid)
+    split_at = left_space if left_space != -1 else right_space
+    if split_at is None or split_at == -1:
+        return name, False
+    return name[:split_at] + "<br>" + name[split_at + 1:], True
+
+
 
 # ---------------------------------------------------
 # Build the Plotly figure: rectangles for boxes, lines for connectors,
@@ -220,7 +269,8 @@ for node in all_nodes:
 # ---------------------------------------------------
 st.subheader("🗂️ Organization Hierarchy (Horizontal)")
 
-BOX_W, BOX_H = 210, 46
+BOX_W, BOX_H = 260, 46
+BOX_H_WRAPPED = 64
 level_colors = ["#e8a33d", "#3ac6a0", "#4b8bf5", "#7a5cf0", "#2a6f97", "#f06a6a"]
 
 shapes = []
@@ -232,17 +282,19 @@ for node in all_nodes:
     col_name, name = node.split("::", 1)
     color = level_colors[col_index.get(col_name, 0) % len(level_colors)]
 
+    label, wrapped = wrap_label(name)
+    box_h = BOX_H_WRAPPED if wrapped else BOX_H
+
     shapes.append(dict(
         type="rect",
         x0=x - BOX_W / 2, x1=x + BOX_W / 2,
-        y0=y - BOX_H / 2, y1=y + BOX_H / 2,
+        y0=y - box_h / 2, y1=y + box_h / 2,
         line=dict(color="#1b4965", width=2),
         fillcolor=color,
         layer="above",
     ))
 
     count = node_counts.get(node, 0)
-    label = name if len(name) <= 22 else name[:20] + "…"
     sub = f"<br><span style='font-size:10px'>Team size: {count}</span>" if count else ""
     annotations.append(dict(
         x=x, y=y,
