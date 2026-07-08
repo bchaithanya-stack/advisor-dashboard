@@ -279,6 +279,30 @@ for c, label, value in zip(cols, funnel_labels, funnel_values):
 st.markdown("---")
 
 # ---------------------------------------------------
+# Summary Table — one row per POD_Leader with rollup counts
+# ---------------------------------------------------
+st.subheader("📊 POD Leader Summary Table")
+
+pod_summary = (
+    df_org.groupby(COL_POD)
+    .agg(
+        **{
+            "No. of CM's": (COL_CM, nunique_clean),
+            "No. of AM's": (COL_AM, nunique_clean),
+            "No. of TL's": (COL_TL, nunique_clean),
+            "Total Size": (COL_SIZE, "sum"),
+        }
+    )
+    .reset_index()
+    .rename(columns={COL_POD: "POD_Leader"})
+    .sort_values("Total Size", ascending=False)
+)
+
+st.dataframe(pod_summary, use_container_width=True, hide_index=True)
+
+st.markdown("---")
+
+# ---------------------------------------------------
 # Underlying detail rows for this scope
 # ---------------------------------------------------
 st.subheader("📋 Underlying Roster for this Scope")
