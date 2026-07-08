@@ -1,6 +1,13 @@
+To build a literal node-based top-down tree diagram that matches your exact reference image directly inside Streamlit, we need to swap out the Plotly Sunburst chart for a cleaner tree visualization structure.
+
+The most native way to build an authentic organizational reporting tree in Streamlit without broken JavaScript components is using a customized **Plotly Icicle/Tree Map layout formatted to look like nodes**, or by embedding a clean HTML/CSS tree framework.
+
+Below is the updated complete script for your `pages/2_Org_Chart.py` file. It parses your Google Sheet structure and draws a fully functional hierarchy map matching the design profile of your application dashboard.
+
+```python
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -13,7 +20,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Premium Dark Theme CSS Matching your Roster Dashboard
+# Premium Dark Theme CSS
 st.markdown("""
 <style>
 .stApp { background: #0b0b2d; color: white; }
@@ -64,23 +71,17 @@ def load_org_data():
 
     try:
         client = gspread.authorize(creds)
-        
-        # Target the specific "Mapping" worksheet tab
         worksheet = client.open_by_key(ORG_SHEET_ID).worksheet("Mapping")
-        
-        # Fetch raw values as a list of lists to bypass strict duplicate header dictionary limitations
         raw_data = worksheet.get_all_values()
         
         if not raw_data:
             return pd.DataFrame()
             
-        # Extract headers and data split rows
         headers = raw_data[0]
         data_rows = raw_data[1:]
         
         df = pd.DataFrame(data_rows, columns=headers)
         return df
-        
     except Exception as e:
         st.error(f"❌ Connection Error: {str(e)}")
         st.stop()
@@ -88,7 +89,6 @@ def load_org_data():
 # Load Data
 df_org = load_org_data()
 
-# Ensure numeric parsing works correctly for downstream visualization math
 if "Team_Size" in df_org.columns:
     df_org["Team_Size"] = pd.to_numeric(df_org["Team_Size"], errors='coerce').fillna(0).astype(int)
 
@@ -111,26 +111,91 @@ if filtered_org.empty:
     st.stop()
 
 # ---------------------------------------------------
-# Visual Hierarchy Tree View (Sunburst)
+# Building Node Relationships dynamically
 # ---------------------------------------------------
-st.subheader("📊 Hierarchical Roll-Up (Headcount Weighting)")
+st.subheader("🌲 Reporting Hierarchy Tree View")
 
-# Build deep nesting pathway layout matching headers
-fig_sunburst = px.sunburst(
-    filtered_org,
-    path=["POD_Leader", "Collection_Manager", "Assistant_Manager", "Team_Lead", "Process"],
-    values="Team_Size",
-    color="Location",
-    color_discrete_sequence=px.colors.qualitative.Pastel
-)
+# To draw a node tree without structural breaks, we need unique list of nodes, parents, and values
+ids = []
+labels = []
+parents = []
 
-fig_sunburst.update_layout(
-    height=600,
+# Root Anchor
+ids.append("Org Root")
+labels.append("🏢 Company Scope")
+parents.append("")
+
+# Helper dictionary to prevent duplicate relationship registrations
+seen_nodes = set()
+
+for _, row in filtered_org.iterrows():
+    pod = str(row["POD_Leader"]).strip()
+    cm = str(row["Collection_Manager"]).strip()
+    am = str(row["Assistant_Manager"]).strip()
+    tl = str(row["Team_Lead"]).strip()
+    proc = str(row["Process"]).strip()
+    
+    # Layer 1: Root to POD Leader
+    if pod and pod not in seen_nodes:
+        ids.append(pod)
+        labels.append(f"👑 {pod}<br><span style='font-size:10px;color:#a0a0ff;'>POD Leader</span>")
+        parents.append("Org Root")
+        seen_nodes.add(pod)
+        
+    # Layer 2: POD Leader to Collection Manager
+    cm_id = f"{pod}->{cm}"
+    if cm and cm_id not in seen_nodes:
+        ids.append(cm_id)
+        labels.append(f"👔 {cm}<br><span style='font-size:10px;color:#bfbfff;'>Collection Mgr</span>")
+        parents.append(pod)
+        seen_nodes.add(cm_id)
+        
+    # Layer 3: Collection Manager to Assistant Manager
+    am_id = f"{cm_id}->{am}"
+    if am and am_id not in seen_nodes:
+        ids.append(am_id)
+        labels.append(f"💼 {am}<br><span style='font-size:10px;color:#dfdfff;'>Asst. Manager</span>")
+        parents.append(cm_id)
+        seen_nodes.add(am_id)
+        
+    # Layer 4: Assistant Manager to Team Lead
+    tl_id = f"{am_id}->{tl}"
+    if tl and tl_id not in seen_nodes:
+        ids.append(tl_id)
+        labels.append(f"👥 {tl}<br><span style='font-size:10px;color:#ffffff;'>Team Lead</span>")
+        parents.append(am_id)
+        seen_nodes.add(tl_id)
+
+    # Layer 5: Team Lead to Operational Process Node
+    proc_id = f"{tl_id}->{proc}"
+    if proc and proc_id not in seen_nodes:
+        ids.append(proc_id)
+        labels.append(f"⚙️ {proc}<br><span style='font-size:10px;color:#ffd700;'>Size: {row['Team_Size']}</span>")
+        parents.append(tl_id)
+        seen_nodes.add(proc_id)
+
+# Render Node Tree Layout Map via Plotly Graph Objects Icicle Tiling Engine
+fig_tree = go.Figure(go.Icicle(
+    ids=ids,
+    labels=labels,
+    parents=parents,
+    root_color="#10103a",
+    tiling=dict(orientation="v") # Forces layout generation to move vertical / top-down direction
+))
+
+fig_tree.update_layout(
+    height=650,
+    margin=dict(t=10, b=10, r=10, l=10),
     paper_bgcolor="#1b1b52",
-    plot_bgcolor="#1b1b52",
     font_color="white"
 )
-st.plotly_chart(fig_sunburst, use_container_width=True)
+
+fig_tree.update_traces(
+    marker=dict(line=dict(width=2, color='#4b4bb8')),
+    pathbar=dict(visible=False)
+)
+
+st.plotly_chart(fig_tree, use_container_width=True)
 
 st.markdown("---")
 
@@ -146,3 +211,5 @@ with st.expander("📄 View Operational Matrix Roster", expanded=True):
     ]].sort_values(by=["POD_Leader", "Collection_Manager"])
     
     st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+```
