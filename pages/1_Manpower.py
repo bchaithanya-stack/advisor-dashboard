@@ -2,14 +2,14 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-import plotly.graph_objects as go
+import graphviz
 
 # ---------------------------------------------------
 # Page Configuration
 # ---------------------------------------------------
 st.set_page_config(
-    page_title="Hierarchy Rollup Summary",
-    page_icon="🧮",
+    page_title="Horizontal Tree Hierarchy",
+    page_icon="🌳",
     layout="wide"
 )
 
@@ -23,7 +23,7 @@ st.markdown("""
 }
 .main-title h1 { color: white; margin: 0; font-size: 42px; font-weight: 700; }
 section[data-testid="stSidebar"] { background: #10103a; }
-.stSelectbox div[data-baseweb="select"] { background: #1b1b52; border-radius: 10px; }
+.stMultiSelect div[data-baseweb="select"] { background: #1b1b52; border-radius: 10px; }
 h1, h2, h3, h4 { color: white; }
 label, p { color: #d8d8f5; }
 </style>
@@ -31,7 +31,7 @@ label, p { color: #d8d8f5; }
 
 st.markdown("""
 <div class="main-title">
-    <h1>🧮 POD / CM / AM / TL Rollup Summary</h1>
+    <h1>🌳 Horizontal Tree Hierarchy</h1>
 </div>
 """, unsafe_allow_html=True)
 st.markdown("---")
@@ -86,347 +86,128 @@ if "Team_Size" in df_org.columns:
 
 # ---------------------------------------------------
 # Column mapping — edit these to match your "Mapping" tab headers exactly
+# Order here = order of the tree, left to right (matches the reference photo:
+# POD_Leader -> Location -> CM -> AM -> TL)
 # ---------------------------------------------------
 COL_POD = "POD_Leader"
+COL_LOCATION = "Location"
 COL_CM = "Collection_Manager"
 COL_AM = "Assistant_Manager"
 COL_TL = "Team_Lead"
 COL_SIZE = "Team_Size"
-COL_PROCESS = "Process"
-COL_LOCATION = "Location"
 
-required_cols = [COL_POD, COL_CM, COL_AM, COL_TL, COL_SIZE]
-missing = [c for c in required_cols if c not in df_org.columns]
-if missing:
-    st.error(f"❌ Missing expected column(s) in the sheet: {missing}. "
-             f"Update COL_POD / COL_CM / COL_AM / COL_TL / COL_SIZE at the top of the script to match your headers.")
-    st.stop()
+LEVEL_COLS = [c for c in [COL_POD, COL_LOCATION, COL_CM, COL_AM, COL_TL] if c in df_org.columns]
 
-has_process = COL_PROCESS in df_org.columns
-has_location = COL_LOCATION in df_org.columns
-
-# ---------------------------------------------------
-# Sidebar: choose scope level and specific entity
-# ---------------------------------------------------
-st.sidebar.header("🔍 Rollup Scope")
-
-view_level = st.sidebar.radio(
-    "View by",
-    ["POD Leader wise", "Collection Manager wise", "Assistant Manager wise", "Team Lead wise"]
-)
-
-level_col_map = {
-    "POD Leader wise": COL_POD,
-    "Collection Manager wise": COL_CM,
-    "Assistant Manager wise": COL_AM,
-    "Team Lead wise": COL_TL,
-}
-scope_col = level_col_map[view_level]
-
-entity_options = sorted(df_org[scope_col].dropna().unique())
-entity_options = [e for e in entity_options if str(e).strip() and str(e).lower() != "nan"]
-
-selected_entity = st.sidebar.selectbox(f"Select {scope_col.replace('_', ' ')}", entity_options)
-
-scoped_df = df_org[df_org[scope_col] == selected_entity]
-
-if scoped_df.empty:
-    st.warning("No data found for this selection.")
+if not LEVEL_COLS:
+    st.error("❌ None of the expected hierarchy columns were found. "
+             "Update COL_POD / COL_LOCATION / COL_CM / COL_AM / COL_TL at the top of the script.")
     st.stop()
 
 # ---------------------------------------------------
-# Build funnel steps depending on the chosen level
-# (mirrors the whiteboard: POD_leader -> No.of CM's -> No.of AM's -> No.of TL's -> Total Size)
-# Each stage also carries the actual member names, so hovering shows the list.
+# Sidebar Filtering Setup
 # ---------------------------------------------------
-funnel_labels = []
-funnel_values = []
-funnel_members = []  # list of lists — names to show on hover for each stage
+st.sidebar.header("🔍 Structure Scope")
 
-def nunique_clean(series):
-    return series.dropna().astype(str).str.strip().replace("", pd.NA).dropna().nunique()
+pod_filter = []
+if COL_POD in df_org.columns:
+    pod_filter = st.sidebar.multiselect("Filter POD Leader", sorted(df_org[COL_POD].dropna().unique()))
 
-def unique_names(series):
-    vals = series.dropna().astype(str).str.strip()
-    vals = vals[vals != ""]
-    return sorted(vals.unique().tolist())
+location_filter = []
+if COL_LOCATION in df_org.columns:
+    location_filter = st.sidebar.multiselect("Filter Location", sorted(df_org[COL_LOCATION].dropna().unique()))
 
-def hover_text(names, max_show=25):
-    if not names:
-        return "No members"
-    shown = names[:max_show]
-    text = "<br>".join(shown)
-    if len(names) > max_show:
-        text += f"<br>...and {len(names) - max_show} more"
-    return text
+filtered_org = df_org.copy()
+if pod_filter:
+    filtered_org = filtered_org[filtered_org[COL_POD].isin(pod_filter)]
+if location_filter:
+    filtered_org = filtered_org[filtered_org[COL_LOCATION].isin(location_filter)]
 
-if scope_col == COL_POD:
-    funnel_labels = [
-        f"POD Leader: {selected_entity}",
-        "No. of CM's",
-        "No. of AM's",
-        "No. of TL's",
-    ]
-    funnel_values = [
-        1,
-        nunique_clean(scoped_df[COL_CM]),
-        nunique_clean(scoped_df[COL_AM]),
-        nunique_clean(scoped_df[COL_TL]),
-    ]
-    funnel_members = [
-        [selected_entity],
-        unique_names(scoped_df[COL_CM]),
-        unique_names(scoped_df[COL_AM]),
-        unique_names(scoped_df[COL_TL]),
-    ]
-    if has_location:
-        funnel_labels.append("No. of Location's")
-        funnel_values.append(nunique_clean(scoped_df[COL_LOCATION]))
-        funnel_members.append(unique_names(scoped_df[COL_LOCATION]))
-    if has_process:
-        funnel_labels.append("No. of Process")
-        funnel_values.append(nunique_clean(scoped_df[COL_PROCESS]))
-        funnel_members.append(unique_names(scoped_df[COL_PROCESS]))
-    funnel_labels.append("Total Size")
-    funnel_values.append(int(scoped_df[COL_SIZE].sum()))
-    funnel_members.append(unique_names(scoped_df.get("Name", scoped_df[COL_TL])))
-
-elif scope_col == COL_CM:
-    funnel_labels = [
-        f"CM: {selected_entity}",
-        "No. of AM's",
-        "No. of TL's",
-    ]
-    funnel_values = [
-        1,
-        nunique_clean(scoped_df[COL_AM]),
-        nunique_clean(scoped_df[COL_TL]),
-    ]
-    funnel_members = [
-        [selected_entity],
-        unique_names(scoped_df[COL_AM]),
-        unique_names(scoped_df[COL_TL]),
-    ]
-    if has_location:
-        funnel_labels.append("No. of Location's")
-        funnel_values.append(nunique_clean(scoped_df[COL_LOCATION]))
-        funnel_members.append(unique_names(scoped_df[COL_LOCATION]))
-    if has_process:
-        funnel_labels.append("No. of Process")
-        funnel_values.append(nunique_clean(scoped_df[COL_PROCESS]))
-        funnel_members.append(unique_names(scoped_df[COL_PROCESS]))
-    funnel_labels.append("Total Size")
-    funnel_values.append(int(scoped_df[COL_SIZE].sum()))
-    funnel_members.append(unique_names(scoped_df.get("Name", scoped_df[COL_TL])))
-
-elif scope_col == COL_AM:
-    funnel_labels = [
-        f"AM: {selected_entity}",
-        "No. of TL's",
-    ]
-    funnel_values = [
-        1,
-        nunique_clean(scoped_df[COL_TL]),
-    ]
-    funnel_members = [
-        [selected_entity],
-        unique_names(scoped_df[COL_TL]),
-    ]
-    if has_location:
-        funnel_labels.append("No. of Location's")
-        funnel_values.append(nunique_clean(scoped_df[COL_LOCATION]))
-        funnel_members.append(unique_names(scoped_df[COL_LOCATION]))
-    if has_process:
-        funnel_labels.append("No. of Process")
-        funnel_values.append(nunique_clean(scoped_df[COL_PROCESS]))
-        funnel_members.append(unique_names(scoped_df[COL_PROCESS]))
-    funnel_labels.append("Total Size")
-    funnel_values.append(int(scoped_df[COL_SIZE].sum()))
-    funnel_members.append(unique_names(scoped_df.get("Name", scoped_df[COL_TL])))
-
-else:  # Team Lead wise — bottom of the hierarchy, just the headcount under this TL
-    funnel_labels = [
-        f"TL: {selected_entity}",
-    ]
-    funnel_values = [
-        1,
-    ]
-    funnel_members = [
-        [selected_entity],
-    ]
-    if has_location:
-        funnel_labels.append("No. of Location's")
-        funnel_values.append(nunique_clean(scoped_df[COL_LOCATION]))
-        funnel_members.append(unique_names(scoped_df[COL_LOCATION]))
-    if has_process:
-        funnel_labels.append("No. of Process")
-        funnel_values.append(nunique_clean(scoped_df[COL_PROCESS]))
-        funnel_members.append(unique_names(scoped_df[COL_PROCESS]))
-    funnel_labels.append("Total Size")
-    funnel_values.append(int(scoped_df[COL_SIZE].sum()))
-    funnel_members.append(unique_names(scoped_df.get("Name", scoped_df[COL_TL])))
-
-hover_texts = [hover_text(names) for names in funnel_members]
-
-# Real values are kept for the on-bar text and hover, but every bar is drawn
-# at the SAME width (uniform_size) so stage size no longer scales with the count.
-uniform_size = [1] * len(funnel_labels)
-display_text = [f"{label.split(':')[0] if ':' in label else label}<br><b>{value}</b>"
-                 for label, value in zip(funnel_labels, funnel_values)]
-# Simpler: just show the number itself on each uniform bar
-display_text = [str(v) for v in funnel_values]
+if filtered_org.empty:
+    st.warning("No structure paths match your selected filters.")
+    st.stop()
 
 # ---------------------------------------------------
-# Funnel chart — vertical (top-to-bottom) stacking, uniform box size,
-# hover reveals member names, on-bar text shows the real count.
+# Build parent -> child edges walking the hierarchy row by row
 # ---------------------------------------------------
-st.subheader(f"📉 Rollup Funnel — {view_level}: {selected_entity}")
+def build_hierarchy_edges(df: pd.DataFrame):
+    edges = set()
+    node_counts = {}  # rollup of Team_Size at the deepest node reached per row
 
-fig = go.Figure(go.Funnel(
-    y=funnel_labels,
-    x=uniform_size,
-    text=display_text,
-    textinfo="text",
-    hovertext=hover_texts,
-    hoverinfo="text",
-    hovertemplate="<b>%{y}</b><br>%{hovertext}<extra></extra>",
-    marker=dict(color=["#e8a33d", "#4b8bf5", "#7a5cf0", "#3ac6a0", "#5ad1e0", "#f0c419", "#f06a6a"][:len(funnel_labels)]),
-    connector=dict(line=dict(color="#8888c0", width=2)),
-))
+    for _, row in df.iterrows():
+        chain = []
+        for col in LEVEL_COLS:
+            val = str(row.get(col, "")).strip()
+            if val and val.lower() != "nan":
+                # Prefix with column name to avoid collisions between identical
+                # names appearing at different levels (e.g. a location and a person sharing a name)
+                chain.append((col, val))
 
-fig.update_layout(
-    height=550,
-    paper_bgcolor="#0b0b2d",
-    plot_bgcolor="#0b0b2d",
-    font_color="white",
-    margin=dict(l=20, r=20, t=20, b=20),
-    xaxis=dict(visible=False),
+        for i in range(len(chain) - 1):
+            parent_key = f"{chain[i][0]}::{chain[i][1]}"
+            child_key = f"{chain[i + 1][0]}::{chain[i + 1][1]}"
+            edges.add((parent_key, child_key))
+
+        if chain:
+            last_key = f"{chain[-1][0]}::{chain[-1][1]}"
+            node_counts[last_key] = node_counts.get(last_key, 0) + int(row.get(COL_SIZE, 1) or 1)
+
+    return edges, node_counts
+
+
+edges, node_counts = build_hierarchy_edges(filtered_org)
+
+# ---------------------------------------------------
+# Render horizontal (left-to-right) tree
+# ---------------------------------------------------
+st.subheader("🗂️ Organization Hierarchy (Horizontal)")
+
+dot = graphviz.Digraph()
+dot.attr(
+    rankdir="LR",
+    bgcolor="#0b0b2d",
+    splines="line",
+    nodesep="0.35",
+    ranksep="1.0",
 )
+dot.attr(
+    "node",
+    shape="box",
+    style="rounded,filled",
+    fillcolor="#2a6f97",
+    fontcolor="white",
+    color="#1b4965",
+    penwidth="2",
+    fontname="Helvetica",
+    fontsize="13",
+    margin="0.3,0.2",
+)
+dot.attr("edge", color="#8fb8de", penwidth="1.6", arrowhead="none")
 
-st.plotly_chart(fig, use_container_width=True)
-st.caption("Hover over any box to see the member names in that stage. Box size is uniform — the number shown is the real count.")
+all_node_keys = set()
+for a, b in edges:
+    all_node_keys.add(a)
+    all_node_keys.add(b)
 
-# ---------------------------------------------------
-# Metrics row (quick glance numbers)
-# ---------------------------------------------------
-cols = st.columns(len(funnel_labels))
-for c, label, value in zip(cols, funnel_labels, funnel_values):
-    c.metric(label, value)
+for key in all_node_keys:
+    col, name = key.split("::", 1)
+    count = node_counts.get(key)
+    label_lines = [f"<B>{name}</B>"]
+    if count:
+        label_lines.append(f'<FONT POINT-SIZE="10" COLOR="#dff0ff">Team size: {count}</FONT>')
+    label = "<" + "<BR/>".join(label_lines) + ">"
+    dot.node(key, label=label)
+
+for a, b in edges:
+    dot.edge(a, b)
+
+st.graphviz_chart(dot, use_container_width=True)
 
 st.markdown("---")
 
 # ---------------------------------------------------
-# Summary Table — one row per POD_Leader with rollup counts
+# Underlying detail rows
 # ---------------------------------------------------
-st.subheader("📊 POD Leader Summary Table")
+st.subheader("📋 Underlying Roster")
 
-agg_dict = {
-    "No. of CM's": (COL_CM, nunique_clean),
-    "No. of AM's": (COL_AM, nunique_clean),
-    "No. of TL's": (COL_TL, nunique_clean),
-}
-if has_location:
-    agg_dict["No. of Location's"] = (COL_LOCATION, nunique_clean)
-if has_process:
-    agg_dict["No. of Process"] = (COL_PROCESS, nunique_clean)
-agg_dict["Total Size"] = (COL_SIZE, "sum")
-
-pod_summary = (
-    df_org.groupby(COL_POD)
-    .agg(**agg_dict)
-    .reset_index()
-    .rename(columns={COL_POD: "POD_Leader"})
-    .sort_values("Total Size", ascending=False)
-)
-
-st.dataframe(pod_summary, use_container_width=True, hide_index=True)
-
-st.markdown("---")
-
-# ---------------------------------------------------
-# Summary Table — one row per Collection Manager
-# ---------------------------------------------------
-st.subheader("📊 Collection Manager Summary Table")
-
-cm_agg = {
-    "No. of AM's": (COL_AM, nunique_clean),
-    "No. of TL's": (COL_TL, nunique_clean),
-}
-if has_location:
-    cm_agg["No. of Location's"] = (COL_LOCATION, nunique_clean)
-if has_process:
-    cm_agg["No. of Process"] = (COL_PROCESS, nunique_clean)
-cm_agg["Total Size"] = (COL_SIZE, "sum")
-
-cm_summary = (
-    df_org.groupby([COL_POD, COL_CM])
-    .agg(**cm_agg)
-    .reset_index()
-    .rename(columns={COL_POD: "POD_Leader", COL_CM: "Collection_Manager"})
-    .sort_values("Total Size", ascending=False)
-)
-
-st.dataframe(cm_summary, use_container_width=True, hide_index=True)
-
-st.markdown("---")
-
-# ---------------------------------------------------
-# Summary Table — one row per Assistant Manager
-# ---------------------------------------------------
-st.subheader("📊 Assistant Manager Summary Table")
-
-am_agg = {
-    "No. of TL's": (COL_TL, nunique_clean),
-}
-if has_location:
-    am_agg["No. of Location's"] = (COL_LOCATION, nunique_clean)
-if has_process:
-    am_agg["No. of Process"] = (COL_PROCESS, nunique_clean)
-am_agg["Total Size"] = (COL_SIZE, "sum")
-
-am_summary = (
-    df_org.groupby([COL_POD, COL_CM, COL_AM])
-    .agg(**am_agg)
-    .reset_index()
-    .rename(columns={COL_POD: "POD_Leader", COL_CM: "Collection_Manager", COL_AM: "Assistant_Manager"})
-    .sort_values("Total Size", ascending=False)
-)
-
-st.dataframe(am_summary, use_container_width=True, hide_index=True)
-
-st.markdown("---")
-
-# ---------------------------------------------------
-# Summary Table — one row per Team Lead
-# ---------------------------------------------------
-st.subheader("📊 Team Lead Summary Table")
-
-tl_agg = {}
-if has_location:
-    tl_agg["No. of Location's"] = (COL_LOCATION, nunique_clean)
-if has_process:
-    tl_agg["No. of Process"] = (COL_PROCESS, nunique_clean)
-tl_agg["Total Size"] = (COL_SIZE, "sum")
-
-tl_summary = (
-    df_org.groupby([COL_POD, COL_CM, COL_AM, COL_TL])
-    .agg(**tl_agg)
-    .reset_index()
-    .rename(columns={
-        COL_POD: "POD_Leader", COL_CM: "Collection_Manager",
-        COL_AM: "Assistant_Manager", COL_TL: "Team_Lead"
-    })
-    .sort_values("Total Size", ascending=False)
-)
-
-st.dataframe(tl_summary, use_container_width=True, hide_index=True)
-
-st.markdown("---")
-
-# ---------------------------------------------------
-# Underlying detail rows for this scope
-# ---------------------------------------------------
-st.subheader("📋 Underlying Roster for this Scope")
-
-detail_cols = [c for c in [COL_POD, COL_CM, COL_AM, COL_TL, COL_LOCATION, COL_PROCESS, COL_SIZE] if c in scoped_df.columns]
-st.dataframe(scoped_df[detail_cols], use_container_width=True, hide_index=True)
+detail_cols = [c for c in LEVEL_COLS + [COL_SIZE] if c in filtered_org.columns]
+st.dataframe(filtered_org[detail_cols], use_container_width=True, hide_index=True)
