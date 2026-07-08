@@ -1,11 +1,7 @@
-Here is the complete, production-ready script for your **`pages/2_Org_Chart.py`** file.
-
-This version includes the direct connection to the **"Mapping"** tab, handles the duplicate column headers dynamically using `get_all_values()`, and sets up the clean, premium dark theme matching your dashboard's style.
-
-```python
+import re
 import streamlit as st
 import pandas as pd
-import plotly.express as px
+import plotly.graph_objects as go
 import gspread
 from google.oauth2.service_account import Credentials
 
@@ -18,7 +14,7 @@ st.set_page_config(
     layout="wide"
 )
 
-# Premium Dark Theme CSS Matching your Roster Dashboard
+# Premium Dark Theme CSS
 st.markdown("""
 <style>
 .stApp { background: #0b0b2d; color: white; }
@@ -69,23 +65,17 @@ def load_org_data():
 
     try:
         client = gspread.authorize(creds)
-        
-        # Target the specific "Mapping" worksheet tab
         worksheet = client.open_by_key(ORG_SHEET_ID).worksheet("Mapping")
-        
-        # Fetch raw values as a list of lists to bypass strict duplicate header dictionary limitations
         raw_data = worksheet.get_all_values()
         
         if not raw_data:
             return pd.DataFrame()
             
-        # Extract headers and data split rows
         headers = raw_data[0]
         data_rows = raw_data[1:]
         
         df = pd.DataFrame(data_rows, columns=headers)
         return df
-        
     except Exception as e:
         st.error(f"❌ Connection Error: {str(e)}")
         st.stop()
@@ -93,7 +83,6 @@ def load_org_data():
 # Load Data
 df_org = load_org_data()
 
-# Ensure numeric parsing works correctly for downstream visualization math
 if "Team_Size" in df_org.columns:
     df_org["Team_Size"] = pd.to_numeric(df_org["Team_Size"], errors='coerce').fillna(0).astype(int)
 
@@ -114,42 +103,3 @@ if processes:
 if filtered_org.empty:
     st.warning("No structure paths match your selected filters.")
     st.stop()
-
-# ---------------------------------------------------
-# Visual Hierarchy Tree View (Sunburst)
-# ---------------------------------------------------
-st.subheader("📊 Hierarchical Roll-Up (Headcount Weighting)")
-
-# Build deep nesting pathway layout matching headers
-fig_sunburst = px.sunburst(
-    filtered_org,
-    path=["POD_Leader", "Collection_Manager", "Assistant_Manager", "Team_Lead", "Process"],
-    values="Team_Size",
-    color="Location",
-    color_discrete_sequence=px.colors.qualitative.Pastel
-)
-
-fig_sunburst.update_layout(
-    height=600,
-    paper_bgcolor="#1b1b52",
-    plot_bgcolor="#1b1b52",
-    font_color="white"
-)
-st.plotly_chart(fig_sunburst, use_container_width=True)
-
-st.markdown("---")
-
-# ---------------------------------------------------
-# Nested Team Breakdown Matrix Data View
-# ---------------------------------------------------
-st.subheader("📋 Drill-Down Matrix Details")
-
-with st.expander("📄 View Operational Matrix Roster", expanded=True):
-    display_df = filtered_org[[
-        "Location", "POD_Leader", "Collection_Manager", 
-        "Assistant_Manager", "Process", "Team_Lead", "Team_Size"
-    ]].sort_values(by=["POD_Leader", "Collection_Manager"])
-    
-    st.dataframe(display_df, use_container_width=True, hide_index=True)
-
-```
