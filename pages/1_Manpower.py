@@ -92,6 +92,7 @@ COL_CM = "Collection_Manager"
 COL_AM = "Assistant_Manager"
 COL_TL = "Team_Lead"
 COL_SIZE = "Team_Size"
+COL_PROCESS = "Process"
 
 required_cols = [COL_POD, COL_CM, COL_AM, COL_TL, COL_SIZE]
 missing = [c for c in required_cols if c not in df_org.columns]
@@ -99,6 +100,8 @@ if missing:
     st.error(f"❌ Missing expected column(s) in the sheet: {missing}. "
              f"Update COL_POD / COL_CM / COL_AM / COL_TL / COL_SIZE at the top of the script to match your headers.")
     st.stop()
+
+has_process = COL_PROCESS in df_org.columns
 
 # ---------------------------------------------------
 # Sidebar: choose scope level and specific entity
@@ -161,73 +164,89 @@ if scope_col == COL_POD:
         "No. of CM's",
         "No. of AM's",
         "No. of TL's",
-        "Total Size",
     ]
     funnel_values = [
         1,
         nunique_clean(scoped_df[COL_CM]),
         nunique_clean(scoped_df[COL_AM]),
         nunique_clean(scoped_df[COL_TL]),
-        int(scoped_df[COL_SIZE].sum()),
     ]
     funnel_members = [
         [selected_entity],
         unique_names(scoped_df[COL_CM]),
         unique_names(scoped_df[COL_AM]),
         unique_names(scoped_df[COL_TL]),
-        unique_names(scoped_df.get("Name", scoped_df[COL_TL])),
     ]
+    if has_process:
+        funnel_labels.append("No. of Process")
+        funnel_values.append(nunique_clean(scoped_df[COL_PROCESS]))
+        funnel_members.append(unique_names(scoped_df[COL_PROCESS]))
+    funnel_labels.append("Total Size")
+    funnel_values.append(int(scoped_df[COL_SIZE].sum()))
+    funnel_members.append(unique_names(scoped_df.get("Name", scoped_df[COL_TL])))
 
 elif scope_col == COL_CM:
     funnel_labels = [
         f"CM: {selected_entity}",
         "No. of AM's",
         "No. of TL's",
-        "Total Size",
     ]
     funnel_values = [
         1,
         nunique_clean(scoped_df[COL_AM]),
         nunique_clean(scoped_df[COL_TL]),
-        int(scoped_df[COL_SIZE].sum()),
     ]
     funnel_members = [
         [selected_entity],
         unique_names(scoped_df[COL_AM]),
         unique_names(scoped_df[COL_TL]),
-        unique_names(scoped_df.get("Name", scoped_df[COL_TL])),
     ]
+    if has_process:
+        funnel_labels.append("No. of Process")
+        funnel_values.append(nunique_clean(scoped_df[COL_PROCESS]))
+        funnel_members.append(unique_names(scoped_df[COL_PROCESS]))
+    funnel_labels.append("Total Size")
+    funnel_values.append(int(scoped_df[COL_SIZE].sum()))
+    funnel_members.append(unique_names(scoped_df.get("Name", scoped_df[COL_TL])))
 
 elif scope_col == COL_AM:
     funnel_labels = [
         f"AM: {selected_entity}",
         "No. of TL's",
-        "Total Size",
     ]
     funnel_values = [
         1,
         nunique_clean(scoped_df[COL_TL]),
-        int(scoped_df[COL_SIZE].sum()),
     ]
     funnel_members = [
         [selected_entity],
         unique_names(scoped_df[COL_TL]),
-        unique_names(scoped_df.get("Name", scoped_df[COL_TL])),
     ]
+    if has_process:
+        funnel_labels.append("No. of Process")
+        funnel_values.append(nunique_clean(scoped_df[COL_PROCESS]))
+        funnel_members.append(unique_names(scoped_df[COL_PROCESS]))
+    funnel_labels.append("Total Size")
+    funnel_values.append(int(scoped_df[COL_SIZE].sum()))
+    funnel_members.append(unique_names(scoped_df.get("Name", scoped_df[COL_TL])))
 
 else:  # Team Lead wise — bottom of the hierarchy, just the headcount under this TL
     funnel_labels = [
         f"TL: {selected_entity}",
-        "Total Size",
     ]
     funnel_values = [
         1,
-        int(scoped_df[COL_SIZE].sum()),
     ]
     funnel_members = [
         [selected_entity],
-        unique_names(scoped_df.get("Name", scoped_df[COL_TL])),
     ]
+    if has_process:
+        funnel_labels.append("No. of Process")
+        funnel_values.append(nunique_clean(scoped_df[COL_PROCESS]))
+        funnel_members.append(unique_names(scoped_df[COL_PROCESS]))
+    funnel_labels.append("Total Size")
+    funnel_values.append(int(scoped_df[COL_SIZE].sum()))
+    funnel_members.append(unique_names(scoped_df.get("Name", scoped_df[COL_TL])))
 
 hover_texts = [hover_text(names) for names in funnel_members]
 
@@ -253,7 +272,7 @@ fig = go.Figure(go.Funnel(
     hovertext=hover_texts,
     hoverinfo="text",
     hovertemplate="<b>%{y}</b><br>%{hovertext}<extra></extra>",
-    marker=dict(color=["#e8a33d", "#4b8bf5", "#7a5cf0", "#3ac6a0", "#f06a6a"][:len(funnel_labels)]),
+    marker=dict(color=["#e8a33d", "#4b8bf5", "#7a5cf0", "#3ac6a0", "#f0c419", "#f06a6a"][:len(funnel_labels)]),
     connector=dict(line=dict(color="#8888c0", width=2)),
 ))
 
@@ -283,16 +302,18 @@ st.markdown("---")
 # ---------------------------------------------------
 st.subheader("📊 POD Leader Summary Table")
 
+agg_dict = {
+    "No. of CM's": (COL_CM, nunique_clean),
+    "No. of AM's": (COL_AM, nunique_clean),
+    "No. of TL's": (COL_TL, nunique_clean),
+}
+if has_process:
+    agg_dict["No. of Process"] = (COL_PROCESS, nunique_clean)
+agg_dict["Total Size"] = (COL_SIZE, "sum")
+
 pod_summary = (
     df_org.groupby(COL_POD)
-    .agg(
-        **{
-            "No. of CM's": (COL_CM, nunique_clean),
-            "No. of AM's": (COL_AM, nunique_clean),
-            "No. of TL's": (COL_TL, nunique_clean),
-            "Total Size": (COL_SIZE, "sum"),
-        }
-    )
+    .agg(**agg_dict)
     .reset_index()
     .rename(columns={COL_POD: "POD_Leader"})
     .sort_values("Total Size", ascending=False)
@@ -307,5 +328,5 @@ st.markdown("---")
 # ---------------------------------------------------
 st.subheader("📋 Underlying Roster for this Scope")
 
-detail_cols = [c for c in [COL_POD, COL_CM, COL_AM, COL_TL, COL_SIZE] if c in scoped_df.columns]
+detail_cols = [c for c in [COL_POD, COL_CM, COL_AM, COL_TL, COL_PROCESS, COL_SIZE] if c in scoped_df.columns]
 st.dataframe(scoped_df[detail_cols], use_container_width=True, hide_index=True)
