@@ -115,11 +115,18 @@ if "Process" in df_org.columns:
 else:
     processes = []
 
+if "POD_Leader" in df_org.columns:
+    processes = st.sidebar.multiselect("Filter POD_Leader", sorted(df_org["POD_Leader"].dropna().unique()))
+else:
+    processes = []
+
 filtered_org = df_org.copy()
 if locations:
     filtered_org = filtered_org[filtered_org["Location"].isin(locations)]
 if processes:
     filtered_org = filtered_org[filtered_org["Process"].isin(processes)]
+ if processes:
+    filtered_org = filtered_org[filtered_org["POD_Leader"].isin(processes)]
 
 if filtered_org.empty:
     st.warning("No structure paths match your selected filters.")
