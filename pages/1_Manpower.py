@@ -324,6 +324,80 @@ st.dataframe(pod_summary, use_container_width=True, hide_index=True)
 st.markdown("---")
 
 # ---------------------------------------------------
+# Summary Table — one row per Collection Manager
+# ---------------------------------------------------
+st.subheader("📊 Collection Manager Summary Table")
+
+cm_agg = {
+    "No. of AM's": (COL_AM, nunique_clean),
+    "No. of TL's": (COL_TL, nunique_clean),
+}
+if has_process:
+    cm_agg["No. of Process"] = (COL_PROCESS, nunique_clean)
+cm_agg["Total Size"] = (COL_SIZE, "sum")
+
+cm_summary = (
+    df_org.groupby([COL_POD, COL_CM])
+    .agg(**cm_agg)
+    .reset_index()
+    .rename(columns={COL_POD: "POD_Leader", COL_CM: "Collection_Manager"})
+    .sort_values("Total Size", ascending=False)
+)
+
+st.dataframe(cm_summary, use_container_width=True, hide_index=True)
+
+st.markdown("---")
+
+# ---------------------------------------------------
+# Summary Table — one row per Assistant Manager
+# ---------------------------------------------------
+st.subheader("📊 Assistant Manager Summary Table")
+
+am_agg = {
+    "No. of TL's": (COL_TL, nunique_clean),
+}
+if has_process:
+    am_agg["No. of Process"] = (COL_PROCESS, nunique_clean)
+am_agg["Total Size"] = (COL_SIZE, "sum")
+
+am_summary = (
+    df_org.groupby([COL_POD, COL_CM, COL_AM])
+    .agg(**am_agg)
+    .reset_index()
+    .rename(columns={COL_POD: "POD_Leader", COL_CM: "Collection_Manager", COL_AM: "Assistant_Manager"})
+    .sort_values("Total Size", ascending=False)
+)
+
+st.dataframe(am_summary, use_container_width=True, hide_index=True)
+
+st.markdown("---")
+
+# ---------------------------------------------------
+# Summary Table — one row per Team Lead
+# ---------------------------------------------------
+st.subheader("📊 Team Lead Summary Table")
+
+tl_agg = {}
+if has_process:
+    tl_agg["No. of Process"] = (COL_PROCESS, nunique_clean)
+tl_agg["Total Size"] = (COL_SIZE, "sum")
+
+tl_summary = (
+    df_org.groupby([COL_POD, COL_CM, COL_AM, COL_TL])
+    .agg(**tl_agg)
+    .reset_index()
+    .rename(columns={
+        COL_POD: "POD_Leader", COL_CM: "Collection_Manager",
+        COL_AM: "Assistant_Manager", COL_TL: "Team_Lead"
+    })
+    .sort_values("Total Size", ascending=False)
+)
+
+st.dataframe(tl_summary, use_container_width=True, hide_index=True)
+
+st.markdown("---")
+
+# ---------------------------------------------------
 # Underlying detail rows for this scope
 # ---------------------------------------------------
 st.subheader("📋 Underlying Roster for this Scope")
