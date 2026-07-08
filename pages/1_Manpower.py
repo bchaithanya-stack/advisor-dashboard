@@ -1,10 +1,4 @@
-To build a literal node-based top-down tree diagram that matches your exact reference image directly inside Streamlit, we need to swap out the Plotly Sunburst chart for a cleaner tree visualization structure.
-
-The most native way to build an authentic organizational reporting tree in Streamlit without broken JavaScript components is using a customized **Plotly Icicle/Tree Map layout formatted to look like nodes**, or by embedding a clean HTML/CSS tree framework.
-
-Below is the updated complete script for your `pages/2_Org_Chart.py` file. It parses your Google Sheet structure and draws a fully functional hierarchy map matching the design profile of your application dashboard.
-
-```python
+import re
 import streamlit as st
 import pandas as pd
 import plotly.graph_objects as go
@@ -115,7 +109,6 @@ if filtered_org.empty:
 # ---------------------------------------------------
 st.subheader("🌲 Reporting Hierarchy Tree View")
 
-# To draw a node tree without structural breaks, we need unique list of nodes, parents, and values
 ids = []
 labels = []
 parents = []
@@ -180,7 +173,7 @@ fig_tree = go.Figure(go.Icicle(
     labels=labels,
     parents=parents,
     root_color="#10103a",
-    tiling=dict(orientation="v") # Forces layout generation to move vertical / top-down direction
+    tiling=dict(orientation="v")
 ))
 
 fig_tree.update_layout(
