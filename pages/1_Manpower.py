@@ -64,10 +64,23 @@ def load_org_data():
 
     try:
         client = gspread.authorize(creds)
-        # Tries to read the very first worksheet tab containing your structure rows
-        worksheet = client.open_by_key(ORG_SHEET_ID).sheet1
-        df = pd.DataFrame(worksheet.get_all_records())
+        
+        # Target the specific "Mapping" worksheet tab
+        worksheet = client.open_by_key(ORG_SHEET_ID).worksheet("Mapping")
+        
+        # Fetch raw values as a list of lists to bypass strict duplicate header dictionary limitations
+        raw_data = worksheet.get_all_values()
+        
+        if not raw_data:
+            return pd.DataFrame()
+            
+        # Extract headers and data split rows
+        headers = raw_data[0]
+        data_rows = raw_data[1:]
+        
+        df = pd.DataFrame(data_rows, columns=headers)
         return df
+        
     except Exception as e:
         st.error(f"❌ Connection Error: {str(e)}")
         st.stop()
@@ -75,7 +88,7 @@ def load_org_data():
 # Load Data
 df_org = load_org_data()
 
-# Ensure numeric values for Team Sizes
+# Ensure numeric parsing works correctly for downstream visualization math
 if "Team_Size" in df_org.columns:
     df_org["Team_Size"] = pd.to_numeric(df_org["Team_Size"], errors='coerce').fillna(0).astype(int)
 
@@ -102,7 +115,7 @@ if filtered_org.empty:
 # ---------------------------------------------------
 st.subheader("📊 Hierarchical Roll-Up (Headcount Weighting)")
 
-# Build interactive sunburst tree: POD Leader -> Collection Manager -> AM -> TL -> Process
+# Build deep nesting pathway layout matching headers
 fig_sunburst = px.sunburst(
     filtered_org,
     path=["POD_Leader", "Collection_Manager", "Assistant_Manager", "Team_Lead", "Process"],
@@ -122,12 +135,11 @@ st.plotly_chart(fig_sunburst, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------
-# Nested Team Breakdown View
+# Nested Team Breakdown Matrix Data View
 # ---------------------------------------------------
 st.subheader("📋 Drill-Down Matrix Details")
 
 with st.expander("📄 View Operational Matrix Roster", expanded=True):
-    # Sort and clean up presentation view
     display_df = filtered_org[[
         "Location", "POD_Leader", "Collection_Manager", 
         "Assistant_Manager", "Process", "Team_Lead", "Team_Size"
