@@ -231,16 +231,25 @@ else:  # Team Lead wise — bottom of the hierarchy, just the headcount under th
 
 hover_texts = [hover_text(names) for names in funnel_members]
 
+# Real values are kept for the on-bar text and hover, but every bar is drawn
+# at the SAME width (uniform_size) so stage size no longer scales with the count.
+uniform_size = [1] * len(funnel_labels)
+display_text = [f"{label.split(':')[0] if ':' in label else label}<br><b>{value}</b>"
+                 for label, value in zip(funnel_labels, funnel_values)]
+# Simpler: just show the number itself on each uniform bar
+display_text = [str(v) for v in funnel_values]
+
 # ---------------------------------------------------
-# Funnel chart — horizontal orientation, hover reveals member names
+# Funnel chart — vertical (top-to-bottom) stacking, uniform box size,
+# hover reveals member names, on-bar text shows the real count.
 # ---------------------------------------------------
 st.subheader(f"📉 Rollup Funnel — {view_level}: {selected_entity}")
 
 fig = go.Figure(go.Funnel(
     y=funnel_labels,
-    x=funnel_values,
-    orientation="h",
-    textinfo="value+text",
+    x=uniform_size,
+    text=display_text,
+    textinfo="text",
     hovertext=hover_texts,
     hoverinfo="text",
     hovertemplate="<b>%{y}</b><br>%{hovertext}<extra></extra>",
@@ -249,15 +258,16 @@ fig = go.Figure(go.Funnel(
 ))
 
 fig.update_layout(
-    height=450,
+    height=550,
     paper_bgcolor="#0b0b2d",
     plot_bgcolor="#0b0b2d",
     font_color="white",
     margin=dict(l=20, r=20, t=20, b=20),
+    xaxis=dict(visible=False),
 )
 
 st.plotly_chart(fig, use_container_width=True)
-st.caption("Hover over any bar to see the member names in that stage.")
+st.caption("Hover over any box to see the member names in that stage. Box size is uniform — the number shown is the real count.")
 
 # ---------------------------------------------------
 # Metrics row (quick glance numbers)
