@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import gspread
 from google.oauth2.service_account import Credentials
-import graphviz
+import plotly.graph_objects as go
 
 # ---------------------------------------------------
 # Page Configuration
@@ -127,80 +127,183 @@ if filtered_org.empty:
     st.stop()
 
 # ---------------------------------------------------
-# Build parent -> child edges walking the hierarchy row by row
+# Build parent -> child edges walking the hierarchy row by row.
+# Node keys are "ColumnName::Value" so identical names at different
+# levels never collide.
 # ---------------------------------------------------
-def build_hierarchy_edges(df: pd.DataFrame):
+def build_hierarchy(df: pd.DataFrame):
     edges = set()
-    node_counts = {}  # rollup of Team_Size at the deepest node reached per row
+    node_counts = {}
+    node_members = {}  # key -> set of downstream member names (for hover)
 
     for _, row in df.iterrows():
         chain = []
         for col in LEVEL_COLS:
             val = str(row.get(col, "")).strip()
             if val and val.lower() != "nan":
-                # Prefix with column name to avoid collisions between identical
-                # names appearing at different levels (e.g. a location and a person sharing a name)
-                chain.append((col, val))
+                chain.append(f"{col}::{val}")
 
         for i in range(len(chain) - 1):
-            parent_key = f"{chain[i][0]}::{chain[i][1]}"
-            child_key = f"{chain[i + 1][0]}::{chain[i + 1][1]}"
-            edges.add((parent_key, child_key))
+            edges.add((chain[i], chain[i + 1]))
 
-        if chain:
-            last_key = f"{chain[-1][0]}::{chain[-1][1]}"
-            node_counts[last_key] = node_counts.get(last_key, 0) + int(row.get(COL_SIZE, 1) or 1)
+        team_size = int(row.get(COL_SIZE, 0) or 0)
+        member_name = str(row.get("Name", "")).strip() if "Name" in df.columns else ""
 
-    return edges, node_counts
+        for key in chain:
+            node_counts[key] = node_counts.get(key, 0) + team_size
+            node_members.setdefault(key, set())
+            if member_name and member_name.lower() != "nan":
+                node_members[key].add(member_name)
+            elif chain:
+                node_members[key].add(chain[-1].split("::", 1)[1])
+
+    return edges, node_counts, node_members
 
 
-edges, node_counts = build_hierarchy_edges(filtered_org)
+edges, node_counts, node_members = build_hierarchy(filtered_org)
+
+parent_children = {}
+for a, b in edges:
+    parent_children.setdefault(a, set()).add(b)
+
+all_nodes = set()
+for a, b in edges:
+    all_nodes.add(a)
+    all_nodes.add(b)
+
+all_children = {b for a, b in edges}
+roots = sorted(all_nodes - all_children)
 
 # ---------------------------------------------------
-# Render horizontal (left-to-right) tree
+# Layout: x from column order, y from recursive averaging
+# (parents centered vertically over their children)
+# ---------------------------------------------------
+col_index = {col: i for i, col in enumerate(LEVEL_COLS)}
+y_memo = {}
+leaf_counter = [0]
+
+
+def compute_y(node):
+    if node in y_memo:
+        return y_memo[node]
+    children = sorted(parent_children.get(node, []))
+    if not children:
+        y = float(leaf_counter[0])
+        leaf_counter[0] += 1
+    else:
+        ys = [compute_y(c) for c in children]
+        y = sum(ys) / len(ys)
+    y_memo[node] = y
+    return y
+
+
+for r in roots:
+    compute_y(r)
+
+# Any node reachable only as a child but somehow not yet visited (safety net)
+for n in all_nodes:
+    if n not in y_memo:
+        compute_y(n)
+
+X_SPACING = 260
+Y_SPACING = 70
+positions = {}
+for node in all_nodes:
+    col_name = node.split("::", 1)[0]
+    x = col_index.get(col_name, 0) * X_SPACING
+    y = y_memo[node] * Y_SPACING
+    positions[node] = (x, y)
+
+# ---------------------------------------------------
+# Build the Plotly figure: rectangles for boxes, lines for connectors,
+# invisible markers on top of each box for hover tooltips.
 # ---------------------------------------------------
 st.subheader("🗂️ Organization Hierarchy (Horizontal)")
 
-dot = graphviz.Digraph()
-dot.attr(
-    rankdir="LR",
-    bgcolor="#0b0b2d",
-    splines="line",
-    nodesep="0.35",
-    ranksep="1.0",
-)
-dot.attr(
-    "node",
-    shape="box",
-    style="rounded,filled",
-    fillcolor="#2a6f97",
-    fontcolor="white",
-    color="#1b4965",
-    penwidth="2",
-    fontname="Helvetica",
-    fontsize="13",
-    margin="0.3,0.2",
-)
-dot.attr("edge", color="#8fb8de", penwidth="1.6", arrowhead="none")
+BOX_W, BOX_H = 210, 46
+level_colors = ["#e8a33d", "#3ac6a0", "#4b8bf5", "#7a5cf0", "#2a6f97", "#f06a6a"]
 
-all_node_keys = set()
+shapes = []
+annotations = []
+hover_x, hover_y, hover_text_list = [], [], []
+
+for node in all_nodes:
+    x, y = positions[node]
+    col_name, name = node.split("::", 1)
+    color = level_colors[col_index.get(col_name, 0) % len(level_colors)]
+
+    shapes.append(dict(
+        type="rect",
+        x0=x - BOX_W / 2, x1=x + BOX_W / 2,
+        y0=y - BOX_H / 2, y1=y + BOX_H / 2,
+        line=dict(color="#1b4965", width=2),
+        fillcolor=color,
+        layer="above",
+    ))
+
+    count = node_counts.get(node, 0)
+    label = name if len(name) <= 22 else name[:20] + "…"
+    sub = f"<br><span style='font-size:10px'>Team size: {count}</span>" if count else ""
+    annotations.append(dict(
+        x=x, y=y,
+        text=f"<b>{label}</b>{sub}",
+        showarrow=False,
+        font=dict(color="white", size=12),
+        align="center",
+    ))
+
+    members = sorted(node_members.get(node, []))
+    hover_lines = members[:25]
+    hover_str = "<br>".join(hover_lines) if hover_lines else "No members"
+    if len(members) > 25:
+        hover_str += f"<br>...and {len(members) - 25} more"
+
+    hover_x.append(x)
+    hover_y.append(y)
+    hover_text_list.append(f"<b>{name}</b><br>Team size: {count}<br>{hover_str}")
+
+edge_x, edge_y = [], []
 for a, b in edges:
-    all_node_keys.add(a)
-    all_node_keys.add(b)
+    xa, ya = positions[a]
+    xb, yb = positions[b]
+    edge_x += [xa + BOX_W / 2, xb - BOX_W / 2, None]
+    edge_y += [ya, yb, None]
 
-for key in all_node_keys:
-    col, name = key.split("::", 1)
-    count = node_counts.get(key)
-    label_lines = [f"<B>{name}</B>"]
-    if count:
-        label_lines.append(f'<FONT POINT-SIZE="10" COLOR="#dff0ff">Team size: {count}</FONT>')
-    label = "<" + "<BR/>".join(label_lines) + ">"
-    dot.node(key, label=label)
+fig = go.Figure()
 
-for a, b in edges:
-    dot.edge(a, b)
+fig.add_trace(go.Scatter(
+    x=edge_x, y=edge_y,
+    mode="lines",
+    line=dict(color="#8fb8de", width=1.6),
+    hoverinfo="skip",
+    showlegend=False,
+))
 
-st.graphviz_chart(dot, use_container_width=True)
+fig.add_trace(go.Scatter(
+    x=hover_x, y=hover_y,
+    mode="markers",
+    marker=dict(size=1, color="rgba(0,0,0,0)"),
+    hovertext=hover_text_list,
+    hoverinfo="text",
+    showlegend=False,
+))
+
+fig.update_layout(shapes=shapes, annotations=annotations)
+
+max_x = max((p[0] for p in positions.values()), default=0)
+max_y = max((p[1] for p in positions.values()), default=0)
+
+fig.update_xaxes(visible=False, range=[-BOX_W, max_x + BOX_W])
+fig.update_yaxes(visible=False, range=[-BOX_H, max_y + BOX_H], scaleanchor=None)
+fig.update_layout(
+    height=max(500, int(max_y) + 150),
+    paper_bgcolor="#0b0b2d",
+    plot_bgcolor="#0b0b2d",
+    margin=dict(l=20, r=20, t=20, b=20),
+)
+
+st.plotly_chart(fig, use_container_width=True)
+st.caption("Hover over any box to see downstream member names and team size.")
 
 st.markdown("---")
 
