@@ -93,6 +93,7 @@ COL_AM = "Assistant_Manager"
 COL_TL = "Team_Lead"
 COL_SIZE = "Team_Size"
 COL_PROCESS = "Process"
+COL_LOCATION = "Location"
 
 required_cols = [COL_POD, COL_CM, COL_AM, COL_TL, COL_SIZE]
 missing = [c for c in required_cols if c not in df_org.columns]
@@ -102,6 +103,7 @@ if missing:
     st.stop()
 
 has_process = COL_PROCESS in df_org.columns
+has_location = COL_LOCATION in df_org.columns
 
 # ---------------------------------------------------
 # Sidebar: choose scope level and specific entity
@@ -177,6 +179,10 @@ if scope_col == COL_POD:
         unique_names(scoped_df[COL_AM]),
         unique_names(scoped_df[COL_TL]),
     ]
+    if has_location:
+        funnel_labels.append("No. of Location's")
+        funnel_values.append(nunique_clean(scoped_df[COL_LOCATION]))
+        funnel_members.append(unique_names(scoped_df[COL_LOCATION]))
     if has_process:
         funnel_labels.append("No. of Process")
         funnel_values.append(nunique_clean(scoped_df[COL_PROCESS]))
@@ -201,6 +207,10 @@ elif scope_col == COL_CM:
         unique_names(scoped_df[COL_AM]),
         unique_names(scoped_df[COL_TL]),
     ]
+    if has_location:
+        funnel_labels.append("No. of Location's")
+        funnel_values.append(nunique_clean(scoped_df[COL_LOCATION]))
+        funnel_members.append(unique_names(scoped_df[COL_LOCATION]))
     if has_process:
         funnel_labels.append("No. of Process")
         funnel_values.append(nunique_clean(scoped_df[COL_PROCESS]))
@@ -222,6 +232,10 @@ elif scope_col == COL_AM:
         [selected_entity],
         unique_names(scoped_df[COL_TL]),
     ]
+    if has_location:
+        funnel_labels.append("No. of Location's")
+        funnel_values.append(nunique_clean(scoped_df[COL_LOCATION]))
+        funnel_members.append(unique_names(scoped_df[COL_LOCATION]))
     if has_process:
         funnel_labels.append("No. of Process")
         funnel_values.append(nunique_clean(scoped_df[COL_PROCESS]))
@@ -240,6 +254,10 @@ else:  # Team Lead wise — bottom of the hierarchy, just the headcount under th
     funnel_members = [
         [selected_entity],
     ]
+    if has_location:
+        funnel_labels.append("No. of Location's")
+        funnel_values.append(nunique_clean(scoped_df[COL_LOCATION]))
+        funnel_members.append(unique_names(scoped_df[COL_LOCATION]))
     if has_process:
         funnel_labels.append("No. of Process")
         funnel_values.append(nunique_clean(scoped_df[COL_PROCESS]))
@@ -272,7 +290,7 @@ fig = go.Figure(go.Funnel(
     hovertext=hover_texts,
     hoverinfo="text",
     hovertemplate="<b>%{y}</b><br>%{hovertext}<extra></extra>",
-    marker=dict(color=["#e8a33d", "#4b8bf5", "#7a5cf0", "#3ac6a0", "#f0c419", "#f06a6a"][:len(funnel_labels)]),
+    marker=dict(color=["#e8a33d", "#4b8bf5", "#7a5cf0", "#3ac6a0", "#5ad1e0", "#f0c419", "#f06a6a"][:len(funnel_labels)]),
     connector=dict(line=dict(color="#8888c0", width=2)),
 ))
 
@@ -307,6 +325,8 @@ agg_dict = {
     "No. of AM's": (COL_AM, nunique_clean),
     "No. of TL's": (COL_TL, nunique_clean),
 }
+if has_location:
+    agg_dict["No. of Location's"] = (COL_LOCATION, nunique_clean)
 if has_process:
     agg_dict["No. of Process"] = (COL_PROCESS, nunique_clean)
 agg_dict["Total Size"] = (COL_SIZE, "sum")
@@ -332,6 +352,8 @@ cm_agg = {
     "No. of AM's": (COL_AM, nunique_clean),
     "No. of TL's": (COL_TL, nunique_clean),
 }
+if has_location:
+    cm_agg["No. of Location's"] = (COL_LOCATION, nunique_clean)
 if has_process:
     cm_agg["No. of Process"] = (COL_PROCESS, nunique_clean)
 cm_agg["Total Size"] = (COL_SIZE, "sum")
@@ -356,6 +378,8 @@ st.subheader("📊 Assistant Manager Summary Table")
 am_agg = {
     "No. of TL's": (COL_TL, nunique_clean),
 }
+if has_location:
+    am_agg["No. of Location's"] = (COL_LOCATION, nunique_clean)
 if has_process:
     am_agg["No. of Process"] = (COL_PROCESS, nunique_clean)
 am_agg["Total Size"] = (COL_SIZE, "sum")
@@ -378,6 +402,8 @@ st.markdown("---")
 st.subheader("📊 Team Lead Summary Table")
 
 tl_agg = {}
+if has_location:
+    tl_agg["No. of Location's"] = (COL_LOCATION, nunique_clean)
 if has_process:
     tl_agg["No. of Process"] = (COL_PROCESS, nunique_clean)
 tl_agg["Total Size"] = (COL_SIZE, "sum")
@@ -402,5 +428,5 @@ st.markdown("---")
 # ---------------------------------------------------
 st.subheader("📋 Underlying Roster for this Scope")
 
-detail_cols = [c for c in [COL_POD, COL_CM, COL_AM, COL_TL, COL_PROCESS, COL_SIZE] if c in scoped_df.columns]
+detail_cols = [c for c in [COL_POD, COL_CM, COL_AM, COL_TL, COL_LOCATION, COL_PROCESS, COL_SIZE] if c in scoped_df.columns]
 st.dataframe(scoped_df[detail_cols], use_container_width=True, hide_index=True)
