@@ -51,8 +51,8 @@ div[data-testid="metric-container"]:hover{ transform:translateY(-4px); transitio
 .stButton>button:hover{ background:#7b7eff; }
 /* Select Box */
 .stSelectbox div[data-baseweb="select"]{ background:#17194c; color:white; }
-/* Dataframe */
-[data-testid="stDataFrame"]{ background:#151846; border-radius:15px; }
+/* Dataframe - light theme card */
+[data-testid="stDataFrame"]{ background:#ffffff; border-radius:15px; padding:6px; border:1px solid #e2e4f5; box-shadow:0px 0px 15px rgba(120,120,255,.15); }
 /* Expanders */
 .streamlit-expanderHeader{ background:#1d2057; border-radius:10px; }
 /* Progress bar */
@@ -127,6 +127,22 @@ def card(title, value):
     <h1 style="color:white;margin:8px 0 0 0;padding:0;font-size:36px;">{value}</h1>
     </div>
     """, unsafe_allow_html=True)
+
+# ---------------------------------------------------
+# Helper Function for Light-Themed Tables
+# ---------------------------------------------------
+
+def style_table(dataframe):
+    """Apply a light theme (white background, dark text) to a dataframe for display,
+    regardless of the app's overall dark theme."""
+    return (
+        dataframe.style
+        .set_properties(**{
+            'background-color': '#ffffff',
+            'color': '#1a1d3a',
+            'border-color': '#e2e4f5'
+        })
+    )
 
 # ---------------------------------------------------
 # Top Bar with Refresh Button
@@ -414,7 +430,7 @@ if view_type == "👤 Advisor View" and advisor_data is not None:
 
     st.markdown("---")
     with st.expander("📄 View Complete Advisor Data"):
-        st.dataframe(advisor_data.to_frame())
+        st.dataframe(style_table(advisor_data.to_frame()), use_container_width=True)
 
 # ===================================================
 # SUPPORT STAFF VIEW CONTENT
@@ -449,7 +465,7 @@ elif view_type == "👥 Support Staff View" and team_df is not None and len(team
         "Advisor Name", "EMP Id", "Email Id", "Status", "Productivity (%)",
         "Compliance (%) QA", "Attendance (%)", "Performance (%)", "Performance Score (1-5)", "Star Rating (1-5)", "Process"
     ]
-    st.dataframe(team_df[[c for c in display_cols if c in team_df.columns]].copy(), use_container_width=True)
+    st.dataframe(style_table(team_df[[c for c in display_cols if c in team_df.columns]].copy()), use_container_width=True)
 
     st.markdown("---")
 
@@ -501,7 +517,7 @@ elif view_type == "📈 Overall View" and overall_df is not None and len(overall
 
     available_overall_cols = [c for c in overall_display_cols if c in overall_df.columns]
 
-    st.dataframe(overall_df[available_overall_cols], use_container_width=True)
+    st.dataframe(style_table(overall_df[available_overall_cols]), use_container_width=True)
 
     st.markdown("---")
 
@@ -572,27 +588,27 @@ elif view_type == "🏢 Management Summary" and mgmt_df is not None and len(mgmt
 
     with tab_tl:
         st.subheader("Team Leader (TL) Performance & Final Balanced Score")
-        st.dataframe(get_aggregated_summary(mgmt_df, "TL"), use_container_width=True)
+        st.dataframe(style_table(get_aggregated_summary(mgmt_df, "TL")), use_container_width=True)
 
     with tab_am:
         st.subheader("Assistant Manager (AM) Performance & Final Balanced Score")
-        st.dataframe(get_aggregated_summary(mgmt_df, "AM"), use_container_width=True)
+        st.dataframe(style_table(get_aggregated_summary(mgmt_df, "AM")), use_container_width=True)
 
     with tab_cm:
         st.subheader("Collection Manager (CM) Performance & Final Balanced Score")
-        st.dataframe(get_aggregated_summary(mgmt_df, "CM"), use_container_width=True)
+        st.dataframe(style_table(get_aggregated_summary(mgmt_df, "CM")), use_container_width=True)
 
     with tab_pod:
         st.subheader("POD Leader Performance & Final Balanced Score")
         if "POD_Leader" in mgmt_df.columns:
-            st.dataframe(get_aggregated_summary(mgmt_df, "POD_Leader"), use_container_width=True)
+            st.dataframe(style_table(get_aggregated_summary(mgmt_df, "POD_Leader")), use_container_width=True)
         else:
             st.warning("POD_Leader column not found in data.")
 
     with tab_loc:
         st.subheader("Center / Location Performance & Final Balanced Score")
-        st.dataframe(get_aggregated_summary(mgmt_df, "Center / Location"), use_container_width=True)
+        st.dataframe(style_table(get_aggregated_summary(mgmt_df, "Center / Location")), use_container_width=True)
 
     with tab_proc:
         st.subheader("Process Wise Performance & Final Balanced Score")
-        st.dataframe(get_aggregated_summary(mgmt_df, "Process"), use_container_width=True)
+        st.dataframe(style_table(get_aggregated_summary(mgmt_df, "Process")), use_container_width=True)
