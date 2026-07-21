@@ -134,9 +134,10 @@ def card(title, value):
 
 def style_table(dataframe):
     """Apply a light theme (white background, dark text) to a dataframe for display,
-    regardless of the app's overall dark theme."""
+    regardless of the app's overall dark theme, and round numeric values to whole numbers."""
     return (
         dataframe.style
+        .format(precision=0)
         .set_properties(**{
             'background-color': '#ffffff',
             'color': '#1a1d3a',
