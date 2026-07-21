@@ -91,7 +91,7 @@ def load_data_from_google_sheets():
 
         # Numeric columns for text-to-numeric type safety (LOP-related columns removed)
         numeric_cols = [
-            "Star Rating (1-5)", "Process Rank", "Productivity (%)",
+            "Star Rating (1-5)", "Process Rank", "Percent rank", "Productivity (%)",
             "Compliance (%) QA", "Attendance (%)", "Performance (%)",
             "Attendance Score (1-5)", "Performance Score (1-5)",
             "Productiviy Score (1-5)", "Compliance Score (1-5)"
@@ -275,7 +275,7 @@ elif view_type == "👥 Support Staff View":
 # ===================================================
 elif view_type == "📈 Overall View":
 
-    st.markdown("**Overall View - Top 10% Advisors by Star Rating**")
+    st.markdown("**Overall View - Top 10% Advisors by Percent rank**")
     overall_col1, overall_col2, overall_col3 = st.columns(3)
 
     with overall_col1:
@@ -304,11 +304,11 @@ elif view_type == "📈 Overall View":
             process_data = overall_df[overall_df["Process"] == process].copy()
             count = len(process_data)
             top_count = max(1, int(count * 0.1))
-            top_process = process_data.nlargest(top_count, "Star Rating (1-5)")
+            top_process = process_data.nlargest(top_count, "Percent rank")
             top_10_percent.append(top_process)
 
         overall_df = pd.concat(top_10_percent, ignore_index=True)
-        overall_df = overall_df.sort_values("Star Rating (1-5)", ascending=False)
+        overall_df = overall_df.sort_values("Percent rank", ascending=False)
 
 # ===================================================
 # MANAGEMENT SUMMARY VIEW FILTERS
@@ -507,13 +507,13 @@ elif view_type == "👥 Support Staff View" and team_df is not None and len(team
 # ===================================================
 elif view_type == "📈 Overall View" and overall_df is not None and len(overall_df) > 0:
 
-    st.success(f"✅ Showing Top 10% Advisors per process based on Star Ratings (Total: {len(overall_df)} advisors)")
+    st.success(f"✅ Showing Top 10% Advisors per process based on Percent rank (Total: {len(overall_df)} advisors)")
 
     st.subheader("🏆 Top Performers Details")
 
     overall_display_cols = [
         "Advisor Name", "Process", "Center / Location", "POD_Leader", "CM",
-        "Star Rating (1-5)", "Productivity (%)", "Compliance (%) QA", "Attendance (%)", "Performance (%)"
+        "Percent rank", "Star Rating (1-5)", "Productivity (%)", "Compliance (%) QA", "Attendance (%)", "Performance (%)"
     ]
 
     available_overall_cols = [c for c in overall_display_cols if c in overall_df.columns]
