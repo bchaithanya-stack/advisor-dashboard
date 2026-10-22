@@ -65,7 +65,8 @@ SCOPES = [
 NUMERIC_COLS = [
     "Target", "Collected Count", "MTD Till Now",
     "Achieved %", "Current Incentive Value", "Next Incentive Value",
-    "Target Gap", "Incentive Value Increased", "Next Target Value", "TL Incentive",
+    "Target Gap", "Incentive Value Increased", "Next Target Value",
+    "Current TL Incentive", "Next TL Incentive",
 ]
 
 
@@ -154,7 +155,7 @@ st.subheader("🔍 Filters & Selection")
 
 view_type = st.radio(
     "📊 Select View Type:",
-    ["👤 Advisor View", "👥 TL / Team View", "📈 Region / Location View", "🏢 Management Summary"],
+    ["👤 Advisor View", "👥 TL / Team View", "📈 Region / Location View", "👔 TL Incentive Summary"],
     horizontal=True,
 )
 
@@ -219,10 +220,11 @@ if view_type == "👤 Advisor View":
 
     with right:
         st.subheader("🎯 Incentive Targets")
-        st.write("**Target Gap:**",        f"₹{int(row['Target Gap']):,}")
-        st.write("**Next Target Value:**", f"₹{int(row['Next Target Value']):,}")
-        st.write("**TL Name:**",           row["TL Name"])
-        st.write("**TL Incentive:**",      f"₹{int(row['TL Incentive']):,}")
+        st.write("**Target Gap:**",           f"₹{int(row['Target Gap']):,}")
+        st.write("**Next Target Value:**",    f"₹{int(row['Next Target Value']):,}")
+        st.write("**TL Name:**",              row["TL Name"])
+        st.write("**Current TL Incentive:**", f"₹{int(row['Current TL Incentive']):,}")
+        st.write("**Next TL Incentive:**",    f"₹{int(row['Next TL Incentive']):,}")
 
     st.markdown("---")
 
@@ -421,99 +423,91 @@ elif view_type == "📈 Region / Location View":
 
 
 # ===================================================
-# MANAGEMENT SUMMARY
+# TL INCENTIVE SUMMARY
 # ===================================================
-elif view_type == "🏢 Management Summary":
-    st.markdown("**Management Summary - Select Filters Below:**")
+elif view_type == "👔 TL Incentive Summary":
+    st.markdown("**TL Incentive Summary - Select Filters Below:**")
 
     col1, col2 = st.columns(2)
     with col1:
         region_list = ["All"] + sorted(df["Region"].dropna().unique().tolist())
-        sel_region = st.selectbox("🔹 Region:", region_list, key="mgmt_region")
+        sel_region = st.selectbox("🔹 Region:", region_list, key="tlinc_region")
 
     with col2:
         loc_df = df[df["Region"] == sel_region] if sel_region != "All" else df
         loc_list = ["All"] + sorted(loc_df["Location"].dropna().unique().tolist())
-        sel_location = st.selectbox("🔹 Location:", loc_list, key="mgmt_location")
+        sel_location = st.selectbox("🔹 Location:", loc_list, key="tlinc_location")
 
-    mgmt_df = loc_df[loc_df["Location"] == sel_location] if sel_location != "All" else loc_df
+    tlinc_df = loc_df[loc_df["Location"] == sel_location] if sel_location != "All" else loc_df
 
-    if mgmt_df.empty:
+    if tlinc_df.empty:
         st.warning("⚠️ No data matches the selected filters.")
         st.stop()
 
     st.markdown("---")
-    st.success(f"✅ Showing **{len(mgmt_df)}** advisors | Region: **{sel_region}** | Location: **{sel_location}**")
 
-    # Top-level KPIs
-    st.subheader("🏢 Overall Summary")
-    c1, c2, c3, c4, c5, c6 = st.columns(6)
-    with c1: card("👥 Total Advisors",      len(mgmt_df))
-    with c2: card("📊 Avg Achieved %",      f"{mgmt_df['Achieved %'].mean():.1f}%")
-    with c3: card("💰 Total Curr Incentive",f"₹{mgmt_df['Current Incentive Value'].sum():,.0f}")
-    with c4: card("🚀 Total Next Incentive",f"₹{mgmt_df['Next Incentive Value'].sum():,.0f}")
-    with c5: card("🎯 Total Target Gap",    f"₹{mgmt_df['Target Gap'].sum():,.0f}")
-    with c6: card("📦 Total Collected",     f"₹{mgmt_df['MTD Till Now'].sum():,.0f}")
+    # TL-wise summary table
+    tl_summary = tlinc_df.groupby("TL Name").agg(
+        **{
+            "No Of Advisors":            ("Advisor Name",         "count"),
+            "Avg Achieved %":            ("Achieved %",           "mean"),
+            "Total Curr TL Incentive":   ("Current TL Incentive", "sum"),
+            "Total Next TL Incentive":   ("Next TL Incentive",    "sum"),
+            "Total Target Gap":          ("Target Gap",           "sum"),
+        }
+    ).reset_index()
+    tl_summary["Avg Achieved %"] = tl_summary["Avg Achieved %"].round(1)
+    tl_summary = tl_summary.sort_values("Avg Achieved %", ascending=False).reset_index(drop=True)
 
-    st.markdown("---")
+    st.success(f"✅ Showing **{len(tl_summary)}** TL(s) | **{len(tlinc_df)}** advisors | "
+               f"Region: **{sel_region}** | Location: **{sel_location}**")
 
-    def aggregated_summary(data, group_col):
-        if group_col not in data.columns:
-            return pd.DataFrame()
-        summary = data.groupby(group_col).agg(
-            Advisors            = ("Advisor Name",            "count"),
-            Avg_Achieved_Pct    = ("Achieved %",              "mean"),
-            Total_MTD           = ("MTD Till Now",            "sum"),
-            Total_Curr_Incentive= ("Current Incentive Value", "sum"),
-            Total_Next_Incentive= ("Next Incentive Value",    "sum"),
-            Total_Target_Gap    = ("Target Gap",              "sum"),
-        ).reset_index()
-        summary = summary.rename(columns={
-            "Avg_Achieved_Pct":     "Avg Achieved %",
-            "Total_MTD":            "Total MTD (₹)",
-            "Total_Curr_Incentive": "Total Current Incentive (₹)",
-            "Total_Next_Incentive": "Total Next Incentive (₹)",
-            "Total_Target_Gap":     "Total Target Gap (₹)",
-        })
-        for col in summary.columns[1:]:
-            summary[col] = summary[col].round(2)
-        return summary.sort_values("Avg Achieved %", ascending=False)
-
-    tab_tl, tab_loc, tab_region, tab_bucket = st.tabs([
-        "👔 TL Wise", "📍 Location Wise", "🗺️ Region Wise", "📂 DPD Bucket Wise"
-    ])
-
-    with tab_tl:
-        st.subheader("TL-wise Incentive Summary")
-        st.dataframe(aggregated_summary(mgmt_df, "TL Name"), use_container_width=True)
-
-    with tab_loc:
-        st.subheader("Location-wise Incentive Summary")
-        st.dataframe(aggregated_summary(mgmt_df, "Location"), use_container_width=True)
-
-    with tab_region:
-        st.subheader("Region-wise Incentive Summary")
-        st.dataframe(aggregated_summary(mgmt_df, "Region"), use_container_width=True)
-
-    with tab_bucket:
-        st.subheader("DPD Bucket-wise Incentive Summary")
-        st.dataframe(aggregated_summary(mgmt_df, "DPD Bucket"), use_container_width=True)
+    # KPI cards
+    st.subheader("👔 TL Incentive Overview")
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1: card("👔 Total TLs",              len(tl_summary))
+    with c2: card("👥 Total Advisors",         len(tlinc_df))
+    with c3: card("💰 Total Curr TL Incentive",f"₹{tl_summary['Total Curr TL Incentive'].sum():,.0f}")
+    with c4: card("🚀 Total Next TL Incentive",f"₹{tl_summary['Total Next TL Incentive'].sum():,.0f}")
+    with c5: card("🎯 Total Target Gap",       f"₹{tl_summary['Total Target Gap'].sum():,.0f}")
 
     st.markdown("---")
 
-    # Achieved % by TL chart
-    st.subheader("📊 Avg Achieved % by TL")
-    tl_chart = aggregated_summary(mgmt_df, "TL Name")
-    fig_tl = px.bar(tl_chart, x="TL Name", y="Avg Achieved %",
-                    text="Avg Achieved %", color="Avg Achieved %",
-                    color_continuous_scale="Blues")
-    fig_tl.update_layout(template="plotly_dark", paper_bgcolor="#090a2f",
-                         plot_bgcolor="#090a2f", font=dict(color="white"),
-                         height=420, coloraxis_showscale=False)
-    fig_tl.update_traces(texttemplate="%{text:.1f}%")
-    st.plotly_chart(fig_tl, use_container_width=True)
+    st.subheader("📋 TL-wise Incentive Summary")
+    st.dataframe(
+        tl_summary,
+        use_container_width=True,
+        hide_index=True,
+        column_config={
+            "Avg Achieved %":          st.column_config.NumberColumn(format="%.1f%%"),
+            "Total Curr TL Incentive": st.column_config.NumberColumn(format="₹%d"),
+            "Total Next TL Incentive": st.column_config.NumberColumn(format="₹%d"),
+            "Total Target Gap":        st.column_config.NumberColumn(format="₹%d"),
+        },
+    )
 
     st.markdown("---")
-    with st.expander("📄 Export Full Data"):
-        st.download_button("⬇️ Download CSV", mgmt_df.to_csv(index=False),
-                           "incentive_summary.csv", "text/csv")
+
+    # Current vs Next TL incentive chart
+    st.subheader("💹 Current vs Next TL Incentive")
+    chart_df = tl_summary.melt(
+        id_vars="TL Name",
+        value_vars=["Total Curr TL Incentive", "Total Next TL Incentive"],
+        var_name="Type", value_name="Amount",
+    )
+    fig_tlinc = px.bar(chart_df, x="TL Name", y="Amount", color="Type",
+                       barmode="group", text="Amount",
+                       color_discrete_map={
+                           "Total Curr TL Incentive": "#5b5ef7",
+                           "Total Next TL Incentive": "#9da2ff",
+                       })
+    fig_tlinc.update_layout(template="plotly_dark", paper_bgcolor="#090a2f",
+                            plot_bgcolor="#090a2f", font=dict(color="white"),
+                            height=420, legend_title_text="")
+    fig_tlinc.update_traces(texttemplate="₹%{text:,.0f}")
+    st.plotly_chart(fig_tlinc, use_container_width=True)
+
+    st.markdown("---")
+    with st.expander("📄 Export TL Incentive Summary"):
+        st.download_button("⬇️ Download CSV", tl_summary.to_csv(index=False),
+                           "tl_incentive_summary.csv", "text/csv")
