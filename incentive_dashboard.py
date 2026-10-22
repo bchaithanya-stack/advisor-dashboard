@@ -104,6 +104,9 @@ def load_data() -> pd.DataFrame:
             st.error("❌ No data found in the sheet.")
             st.stop()
 
+        # Strip whitespace from all column names to avoid hidden space issues
+        df.columns = [c.strip() for c in df.columns]
+
         for col in NUMERIC_COLS:
             if col in df.columns:
                 df[col] = (
@@ -137,6 +140,13 @@ st.markdown("---")
 # Fetch Data
 # ---------------------------------------------------
 df = load_data()
+
+# ---------------------------------------------------
+# Debug — shows actual column names from sheet (remove once confirmed working)
+# ---------------------------------------------------
+with st.expander("🔧 Debug: Show actual column names from sheet"):
+    st.write(df.columns.tolist())
+    st.write("Total rows:", len(df))
 
 # ---------------------------------------------------
 # View Type Toggle
