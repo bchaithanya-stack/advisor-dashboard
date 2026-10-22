@@ -107,6 +107,12 @@ def load_data() -> pd.DataFrame:
         # Strip whitespace AND newlines from all column names
         df.columns = [c.strip().replace("\n", " ") for c in df.columns]
 
+        # Use "Main Region" as the Region everywhere in the dashboard
+        # (original Region column is kept as "Sub Region" so nothing is lost)
+        df["Sub Region"] = df["Region"]
+        df["Region"] = df["Main Region"].astype(str).str.strip()
+        df["Region"] = df["Region"].replace("", pd.NA)  # blanks get dropped by .dropna()
+
         for col in NUMERIC_COLS:
             if col in df.columns:
                 df[col] = (
@@ -206,8 +212,8 @@ if view_type == "👤 Advisor View":
     with left:
         st.subheader("👤 Advisor Details")
         st.write("**Advisor Name:**", row["Advisor Name"])
-        st.write("**Region:**",       row["Region"])
-        st.write("**Main Region:**",  row["Main Region"])
+        st.write("**Region:**",       row["Region"])      # now = Main Region
+        st.write("**Sub Region:**",   row["Sub Region"])  # original Region column
         st.write("**Location:**",     row["Location"])
         st.write("**DPD Bucket:**",   row["DPD Bucket"])
 
