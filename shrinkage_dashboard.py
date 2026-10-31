@@ -145,7 +145,14 @@ def load_data() -> pd.DataFrame:
         return df
 
     except Exception as e:
-        st.error(f"❌ Error loading data: {e}")
+        st.error(f"❌ Error loading data: {type(e).__name__}: {e!r}")
+        if type(e).__name__ == "SpreadsheetNotFound":
+            st.info("The sheet isn't shared with the service account (or the sheet ID is wrong). "
+                    "Share it with advisor-dashboard@advisor-dashboard-500613.iam.gserviceaccount.com as Viewer.")
+        elif type(e).__name__ == "WorksheetNotFound":
+            st.info(f"No tab named '{SHEET_TAB}' was found in the sheet. Check the tab name.")
+        elif type(e).__name__ == "KeyError":
+            st.info("Secrets look missing: add [gcp_service_account] in the app's Settings → Secrets.")
         st.stop()
 
 
@@ -276,7 +283,64 @@ st.plotly_chart(fig2, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------
-# Chart 3 — Shrinkage by chosen dimension
+# Chart 3 — Day-level Shrinkage % by Process / TL / CM
+# ---------------------------------------------------
+st.subheader("📉 Day-Level Shrinkage % — Process / TL / CM")
+
+
+def day_level_by(dim, label, key):
+    """One line per `dim` value, x = Date, y = Shrinkage %."""
+    if dim not in filtered.columns:
+        st.info(f"Column '{dim}' was not found in the sheet.")
+        return
+
+    g = (
+        filtered.groupby(["Date", dim])
+        .agg(Roster=("Roster Count", "sum"), Attendance=("Attendance Count", "sum"))
+        .reset_index()
+    )
+    g = g[(g["Roster"] > 0) & (g[dim] != "")]      # skip days with nobody rostered
+    g["Shrinkage %"] = shrinkage(g["Roster"], g["Attendance"])
+
+    if g.empty:
+        st.warning(f"No rostered data available for {label}.")
+        return
+
+    options = g.groupby(dim)["Roster"].sum().sort_values(ascending=False).index.tolist()
+    selected = st.multiselect(
+        f"Select {label} to plot (top 8 by roster size shown by default):",
+        options, default=options[:8], key=key,
+    )
+    if not selected:
+        st.warning(f"Select at least one {label}.")
+        return
+
+    plot_df = g[g[dim].isin(selected)].sort_values("Date")
+
+    fig = px.line(plot_df, x="Date", y="Shrinkage %", color=dim, markers=True)
+    fig.update_layout(**PLOT_LAYOUT, height=460, yaxis_title="Shrinkage %",
+                      legend_title_text=label)
+    st.plotly_chart(fig, use_container_width=True)
+
+    with st.expander(f"📄 {label} × Date table (Shrinkage %)"):
+        pivot = plot_df.pivot_table(index=dim, columns="Date", values="Shrinkage %")
+        pivot.columns = [d.strftime("%d %b") for d in pivot.columns]
+        st.dataframe(pivot, use_container_width=True)
+
+
+tab_proc, tab_tl, tab_cm = st.tabs(["🏭 Process", "👔 TL", "🧑‍💼 CM"])
+
+with tab_proc:
+    day_level_by("Final", "Process", "dl_proc")
+with tab_tl:
+    day_level_by("TL", "TL", "dl_tl")
+with tab_cm:
+    day_level_by("CM", "CM", "dl_cm")
+
+st.markdown("---")
+
+# ---------------------------------------------------
+# Chart 4 — Shrinkage by chosen dimension
 # ---------------------------------------------------
 st.subheader("📊 Shrinkage % Breakdown")
 
