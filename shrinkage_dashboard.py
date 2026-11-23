@@ -188,19 +188,6 @@ st.subheader("🔍 Filters")
 filtered = df.copy()
 
 
-def cascade_select(label, column, container, key):
-    """Selectbox whose options depend on filters applied so far."""
-    global filtered
-    if column not in filtered.columns:
-        return "All"
-    options = ["All"] + sorted([x for x in filtered[column].dropna().unique() if x != ""])
-    with container:
-        choice = st.selectbox(label, options, key=key)
-    if choice != "All":
-        filtered = filtered[filtered[column] == choice]
-    return choice
-
-
 def cascade_multiselect(label, column, container, key):
     """Multiselect whose options depend on filters applied so far.
     Empty selection = no filtering (acts like 'All')."""
@@ -221,15 +208,15 @@ def cascade_multiselect(label, column, container, key):
 
 
 r1 = st.columns(4)
-cascade_select("🔹 Location:", "Location", r1[0], "f_loc")
+cascade_multiselect("🔹 Location:", "Location", r1[0], "f_loc")
 cascade_multiselect("🔹 Process (Final):", "Final", r1[1], "f_final")
-cascade_select("🔹 POD Leader:", "POD Leader", r1[2], "f_pod")
-cascade_select("🔹 CM:", "CM", r1[3], "f_cm")
+cascade_multiselect("🔹 POD Leader:", "POD Leader", r1[2], "f_pod")
+cascade_multiselect("🔹 CM:", "CM", r1[3], "f_cm")
 
 r2 = st.columns(4)
-cascade_select("🔹 AM:", "AM", r2[0], "f_am")
-cascade_select("🔹 TL:", "TL", r2[1], "f_tl")
-cascade_select("🔹 Active Status:", "Active Status", r2[2], "f_active")
+cascade_multiselect("🔹 AM:", "AM", r2[0], "f_am")
+cascade_multiselect("🔹 TL:", "TL", r2[1], "f_tl")
+cascade_multiselect("🔹 Active Status:", "Active Status", r2[2], "f_active")
 
 min_d, max_d = df["Date"].min().date(), df["Date"].max().date()
 with r2[3]:
