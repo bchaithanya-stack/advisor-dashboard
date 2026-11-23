@@ -45,6 +45,8 @@ section[data-testid="stSidebar"] {display:none;}
 .stButton>button{ background:#5b5ef7; color:white; border:none; border-radius:10px; padding:10px; font-weight:600; }
 .stButton>button:hover{ background:#7b7eff; }
 .stSelectbox div[data-baseweb="select"]{ background:#17194c; color:white; }
+.stMultiSelect div[data-baseweb="select"]{ background:#17194c; color:white; }
+.stMultiSelect span[data-baseweb="tag"]{ background:#5b5ef7; color:white; }
 [data-testid="stDataFrame"]{ background:#151846; border-radius:15px; }
 .streamlit-expanderHeader{ background:#1d2057; border-radius:10px; }
 h1{ color:white; font-weight:700; }
@@ -199,9 +201,28 @@ def cascade_select(label, column, container, key):
     return choice
 
 
+def cascade_multiselect(label, column, container, key):
+    """Multiselect whose options depend on filters applied so far.
+    Empty selection = no filtering (acts like 'All')."""
+    global filtered
+    if column not in filtered.columns:
+        return []
+    options = sorted([x for x in filtered[column].dropna().unique() if x != ""])
+
+    # Drop previously selected values that are no longer valid after upstream filters change
+    if key in st.session_state:
+        st.session_state[key] = [v for v in st.session_state[key] if v in options]
+
+    with container:
+        choice = st.multiselect(label, options, key=key, placeholder="All")
+    if choice:
+        filtered = filtered[filtered[column].isin(choice)]
+    return choice
+
+
 r1 = st.columns(4)
 cascade_select("🔹 Location:", "Location", r1[0], "f_loc")
-cascade_select("🔹 Process (Final):", "Final", r1[1], "f_final")
+cascade_multiselect("🔹 Process (Final):", "Final", r1[1], "f_final")
 cascade_select("🔹 POD Leader:", "POD Leader", r1[2], "f_pod")
 cascade_select("🔹 CM:", "CM", r1[3], "f_cm")
 
