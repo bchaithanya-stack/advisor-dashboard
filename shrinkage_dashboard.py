@@ -293,7 +293,7 @@ st.markdown("---")
 # ---------------------------------------------------
 # Chart 3 — Day-level Shrinkage % by Process / TL / CM
 # ---------------------------------------------------
-st.subheader("📉 Day-Level Shrinkage % — Process / TL / CM")
+st.subheader("📉 Day-Level Shrinkage % — Process / TL / CM / POD Leader / Location")
 
 
 def day_level_by(dim, label, key):
@@ -336,7 +336,9 @@ def day_level_by(dim, label, key):
         st.dataframe(pivot, use_container_width=True)
 
 
-tab_proc, tab_tl, tab_cm = st.tabs(["🏭 Process", "👔 TL", "🧑‍💼 CM"])
+tab_proc, tab_tl, tab_cm, tab_pod, tab_loc = st.tabs(
+    ["🏭 Process", "👔 TL", "🧑‍💼 CM", "🧭 POD Leader", "📍 Location"]
+)
 
 with tab_proc:
     day_level_by("Final", "Process", "dl_proc")
@@ -344,6 +346,10 @@ with tab_tl:
     day_level_by("TL", "TL", "dl_tl")
 with tab_cm:
     day_level_by("CM", "CM", "dl_cm")
+with tab_pod:
+    day_level_by("POD Leader", "POD Leader", "dl_pod")
+with tab_loc:
+    day_level_by("Location", "Location", "dl_loc")
 
 st.markdown("---")
 
