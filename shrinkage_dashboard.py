@@ -397,7 +397,7 @@ st.markdown("---")
 st.subheader("🧮 Overall Count Breakdown")
 st.caption("Headcount (advisor-days) split by whether they were rostered and whether they were present.")
 
-COUNT_COLS = ["Rostered", "Not Rostered", "Present", "Absent (Rostered, not present)",
+COUNT_COLS = ["Rostered", "Week Off", "Present", "Absent (Rostered, not present)",
               "Present (Not Rostered)"]
 
 cnt_df = filtered.copy()
