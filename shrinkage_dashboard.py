@@ -392,6 +392,61 @@ st.plotly_chart(fig_att, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------
+# Chart 6 — Overall Count Breakdown (Rostered / Not Rostered / Present / Absent)
+# ---------------------------------------------------
+st.subheader("🧮 Overall Count Breakdown")
+st.caption("Headcount (advisor-days) split by whether they were rostered and whether they were present.")
+
+COUNT_COLS = ["Rostered", "Not Rostered", "Present", "Absent (Rostered, not present)",
+              "Present (Not Rostered)"]
+
+cnt_df = filtered.copy()
+_r = cnt_df["Roster Count"] > 0
+_a = cnt_df["Attendance Count"] > 0
+cnt_df["Total Records"] = 1
+cnt_df["Rostered"] = _r.astype(int)
+cnt_df["Not Rostered"] = (~_r).astype(int)
+cnt_df["Present"] = _a.astype(int)
+cnt_df["Absent (Rostered, not present)"] = (_r & ~_a).astype(int)
+cnt_df["Present (Not Rostered)"] = (~_r & _a).astype(int)
+
+k1, k2, k3, k4, k5 = st.columns(5)
+with k1: card("📋 Total Records", f"{int(cnt_df['Total Records'].sum()):,}")
+with k2: card("🗓️ Rostered", f"{int(cnt_df['Rostered'].sum()):,}")
+with k3: card("🚫 Not Rostered", f"{int(cnt_df['Not Rostered'].sum()):,}")
+with k4: card("✅ Present", f"{int(cnt_df['Present'].sum()):,}")
+with k5: card("❌ Absent (Rostered)", f"{int(cnt_df['Absent (Rostered, not present)'].sum()):,}")
+
+cnt_dim = st.selectbox("Break down by:", dim_options, key="count_breakdown_dim")
+
+by_cnt = (
+    cnt_df[cnt_df[cnt_dim] != ""]
+    .groupby(cnt_dim)[["Total Records"] + COUNT_COLS]
+    .sum()
+    .reset_index()
+    .sort_values("Total Records", ascending=False)
+)
+
+plot_cols = ["Rostered", "Not Rostered", "Present", "Absent (Rostered, not present)"]
+cnt_long = by_cnt.melt(id_vars=cnt_dim, value_vars=plot_cols, var_name="Category", value_name="Count")
+
+fig_cnt = px.bar(
+    cnt_long, x=cnt_dim, y="Count", color="Category", barmode="group", text="Count",
+    color_discrete_map={
+        "Rostered": "#5b5ef7",
+        "Not Rostered": "#8d92b8",
+        "Present": "#38d9a9",
+        "Absent (Rostered, not present)": "#ff6b6b",
+    },
+)
+fig_cnt.update_traces(texttemplate="%{text:,.0f}", textposition="outside", cliponaxis=False)
+fig_cnt.update_layout(**PLOT_LAYOUT, height=460, yaxis_title="Count",
+                      legend=dict(orientation="h", y=1.12, title_text=""))
+st.plotly_chart(fig_cnt, use_container_width=True)
+
+st.markdown("---")
+
+# ---------------------------------------------------
 # PowerPoint Snapshots — export-ready visuals
 # ---------------------------------------------------
 st.subheader("📸 PowerPoint Snapshots")
@@ -716,3 +771,8 @@ with st.expander(f"📄 {att_dim}-wise Attendance Count Table"):
     st.dataframe(by_att, use_container_width=True)
     st.download_button("⬇️ Download Attendance Breakdown CSV", by_att.to_csv(index=False),
                        "attendance_breakdown.csv", "text/csv", key="dl_att_csv")
+
+with st.expander(f"📄 {cnt_dim}-wise Overall Count Table"):
+    st.dataframe(by_cnt, use_container_width=True)
+    st.download_button("⬇️ Download Overall Count CSV", by_cnt.to_csv(index=False),
+                       "overall_count_breakdown.csv", "text/csv", key="dl_cnt_csv")
