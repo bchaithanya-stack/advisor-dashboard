@@ -413,7 +413,7 @@ cnt_df["Present (Not Rostered)"] = (~_r & _a).astype(int)
 k1, k2, k3, k4, k5 = st.columns(5)
 with k1: card("📋 Total Records", f"{int(cnt_df['Total Records'].sum()):,}")
 with k2: card("🗓️ Rostered", f"{int(cnt_df['Rostered'].sum()):,}")
-with k3: card("🚫 Not Rostered", f"{int(cnt_df['Not Rostered'].sum()):,}")
+with k3: card("🛌 Week Off", f"{int(cnt_df['Not Rostered'].sum()):,}")
 with k4: card("✅ Present", f"{int(cnt_df['Present'].sum()):,}")
 with k5: card("❌ Absent (Rostered)", f"{int(cnt_df['Absent (Rostered, not present)'].sum()):,}")
 
