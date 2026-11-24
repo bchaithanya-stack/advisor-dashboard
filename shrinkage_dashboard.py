@@ -392,26 +392,35 @@ st.plotly_chart(fig_att, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------
-# Chart 6 — Overall Count Breakdown (Rostered / Not Rostered / Present / Absent)
+# Chart 6 — Overall Count Breakdown (starts from Active Headcount)
 # ---------------------------------------------------
 st.subheader("🧮 Overall Count Breakdown")
-st.caption("Headcount (advisor-days) split by whether they were rostered and whether they were present.")
+st.caption("Starts from Active Headcount (advisor-days where Active Status = Active), then splits it into "
+           "Rostered / Week Off and Present / Absent. Absent = active, rostered, and Attendance Count = 0.")
+
+ACTIVE_VALUE = "active"     # matches Active Status == "Active" (case-insensitive; "Inactive" is excluded)
 
 COUNT_COLS = ["Rostered", "Week Off", "Present", "Absent (Rostered, not present)",
               "Present (Not Rostered)"]
 
 cnt_df = filtered.copy()
+if "Active Status" in cnt_df.columns:
+    _act = cnt_df["Active Status"].astype(str).str.strip().str.lower().eq(ACTIVE_VALUE)
+else:
+    _act = pd.Series(True, index=cnt_df.index)     # no Active Status column -> treat everyone as active
 _r = cnt_df["Roster Count"] > 0
 _a = cnt_df["Attendance Count"] > 0
-cnt_df["Total Records"] = 1
-cnt_df["Rostered"] = _r.astype(int)
-cnt_df["Week Off"] = (~_r).astype(int)
-cnt_df["Present"] = _a.astype(int)
-cnt_df["Absent (Rostered, not present)"] = (_r & ~_a).astype(int)
-cnt_df["Present (Not Rostered)"] = (~_r & _a).astype(int)
+_zero = cnt_df["Attendance Count"] == 0
+
+cnt_df["Active Headcount"] = _act.astype(int)
+cnt_df["Rostered"] = (_act & _r).astype(int)
+cnt_df["Week Off"] = (_act & ~_r).astype(int)
+cnt_df["Present"] = (_act & _a).astype(int)
+cnt_df["Absent (Rostered, not present)"] = (_act & _r & _zero).astype(int)
+cnt_df["Present (Not Rostered)"] = (_act & ~_r & _a).astype(int)
 
 k1, k2, k3, k4, k5 = st.columns(5)
-with k1: card("📋 Total Records", f"{int(cnt_df['Total Records'].sum()):,}")
+with k1: card("👥 Active Headcount", f"{int(cnt_df['Active Headcount'].sum()):,}")
 with k2: card("🗓️ Rostered", f"{int(cnt_df['Rostered'].sum()):,}")
 with k3: card("🛌 Week Off", f"{int(cnt_df['Week Off'].sum()):,}")
 with k4: card("✅ Present", f"{int(cnt_df['Present'].sum()):,}")
@@ -421,18 +430,20 @@ cnt_dim = st.selectbox("Break down by:", dim_options, key="count_breakdown_dim")
 
 by_cnt = (
     cnt_df[cnt_df[cnt_dim] != ""]
-    .groupby(cnt_dim)[["Total Records"] + COUNT_COLS]
+    .groupby(cnt_dim)[["Active Headcount"] + COUNT_COLS]
     .sum()
     .reset_index()
-    .sort_values("Total Records", ascending=False)
+    .sort_values("Active Headcount", ascending=False)
 )
 
-plot_cols = ["Rostered", "Week Off", "Present", "Absent (Rostered, not present)"]
+plot_cols = ["Active Headcount", "Rostered", "Week Off", "Present", "Absent (Rostered, not present)"]
 cnt_long = by_cnt.melt(id_vars=cnt_dim, value_vars=plot_cols, var_name="Category", value_name="Count")
 
 fig_cnt = px.bar(
     cnt_long, x=cnt_dim, y="Count", color="Category", barmode="group", text="Count",
+    category_orders={"Category": plot_cols},
     color_discrete_map={
+        "Active Headcount": "#b8bcff",
         "Rostered": "#5b5ef7",
         "Week Off": "#8d92b8",
         "Present": "#38d9a9",
