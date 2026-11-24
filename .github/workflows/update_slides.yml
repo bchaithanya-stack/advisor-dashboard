@@ -1,1 +1,35 @@
+name: Update shrinkage slides
 
+on:
+  schedule:
+    - cron: "0 * * * *"        # every hour (GitHub may start it a few minutes late)
+  workflow_dispatch: {}         # lets you run it manually from the Actions tab
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-slides
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install gspread google-auth google-api-python-client pandas
+
+      - name: Update Google Slides
+        run: python automation/update_slides.py
+        env:
+          GCP_SERVICE_ACCOUNT_JSON: ${{ secrets.GCP_SERVICE_ACCOUNT_JSON }}
+          SHRINKAGE_SHEET_ID: ${{ secrets.SHRINKAGE_SHEET_ID }}
+          DATA_SHEET_ID: ${{ secrets.DATA_SHEET_ID }}
+          SLIDES_DECK_ID: ${{ secrets.SLIDES_DECK_ID }}
