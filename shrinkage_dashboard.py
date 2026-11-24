@@ -186,19 +186,19 @@ st.subheader("🔍 Filters")
 filtered = df.copy()
 
 
-active_filters = {}   # column -> chosen value (used for the PowerPoint footer)
+active_filters = {}   # column -> list of chosen values (used for the PowerPoint footer)
 
 
 def cascade_select(label, column, container, key):
-    """Selectbox whose options depend on filters applied so far."""
+    """Multiselect whose options depend on filters applied so far. Nothing selected = All."""
     global filtered
     if column not in filtered.columns:
-        return "All"
-    options = ["All"] + sorted([x for x in filtered[column].dropna().unique() if x != ""])
+        return []
+    options = sorted([x for x in filtered[column].dropna().unique() if x != ""])
     with container:
-        choice = st.selectbox(label, options, key=key)
-    if choice != "All":
-        filtered = filtered[filtered[column] == choice]
+        choice = st.multiselect(label, options, key=key, placeholder="All")
+    if choice:
+        filtered = filtered[filtered[column].isin(choice)]
         active_filters[column] = choice
     return choice
 
@@ -741,7 +741,7 @@ if PPTX_OK:
         label_map = {"Final": "Process"}
         d_min, d_max = filtered["Date"].min(), filtered["Date"].max()
         ppt_subtitle = f"Period: {d_min:%d %b %Y} – {d_max:%d %b %Y}"
-        ppt_footer = "Filters: " + (", ".join(f"{label_map.get(k, k)}: {v}" for k, v in active_filters.items())
+        ppt_footer = "Filters: " + (", ".join(f"{label_map.get(k, k)}: {', '.join(v)}" for k, v in active_filters.items())
                                     or "None (all data)")
         pptx_bytes = build_pptx(
             theme, summary_items,
