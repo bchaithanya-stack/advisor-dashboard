@@ -405,7 +405,7 @@ _r = cnt_df["Roster Count"] > 0
 _a = cnt_df["Attendance Count"] > 0
 cnt_df["Total Records"] = 1
 cnt_df["Rostered"] = _r.astype(int)
-cnt_df["Not Rostered"] = (~_r).astype(int)
+cnt_df["Week Off"] = (~_r).astype(int)
 cnt_df["Present"] = _a.astype(int)
 cnt_df["Absent (Rostered, not present)"] = (_r & ~_a).astype(int)
 cnt_df["Present (Not Rostered)"] = (~_r & _a).astype(int)
@@ -413,7 +413,7 @@ cnt_df["Present (Not Rostered)"] = (~_r & _a).astype(int)
 k1, k2, k3, k4, k5 = st.columns(5)
 with k1: card("📋 Total Records", f"{int(cnt_df['Total Records'].sum()):,}")
 with k2: card("🗓️ Rostered", f"{int(cnt_df['Rostered'].sum()):,}")
-with k3: card("🛌 Week Off", f"{int(cnt_df['Not Rostered'].sum()):,}")
+with k3: card("🛌 Week Off", f"{int(cnt_df['Week Off'].sum()):,}")
 with k4: card("✅ Present", f"{int(cnt_df['Present'].sum()):,}")
 with k5: card("❌ Absent (Rostered)", f"{int(cnt_df['Absent (Rostered, not present)'].sum()):,}")
 
@@ -427,14 +427,14 @@ by_cnt = (
     .sort_values("Total Records", ascending=False)
 )
 
-plot_cols = ["Rostered", "Not Rostered", "Present", "Absent (Rostered, not present)"]
+plot_cols = ["Rostered", "Week Off", "Present", "Absent (Rostered, not present)"]
 cnt_long = by_cnt.melt(id_vars=cnt_dim, value_vars=plot_cols, var_name="Category", value_name="Count")
 
 fig_cnt = px.bar(
     cnt_long, x=cnt_dim, y="Count", color="Category", barmode="group", text="Count",
     color_discrete_map={
         "Rostered": "#5b5ef7",
-        "Not Rostered": "#8d92b8",
+        "Week Off": "#8d92b8",
         "Present": "#38d9a9",
         "Absent (Rostered, not present)": "#ff6b6b",
     },
