@@ -186,6 +186,9 @@ st.subheader("🔍 Filters")
 filtered = df.copy()
 
 
+active_filters = {}   # column -> chosen value (used for the PowerPoint footer)
+
+
 def cascade_select(label, column, container, key):
     """Selectbox whose options depend on filters applied so far."""
     global filtered
@@ -196,6 +199,7 @@ def cascade_select(label, column, container, key):
         choice = st.selectbox(label, options, key=key)
     if choice != "All":
         filtered = filtered[filtered[column] == choice]
+        active_filters[column] = choice
     return choice
 
 
@@ -415,14 +419,19 @@ def summary_figure(items, th):
     return fig
 
 
-def breakdown_snapshot(dim_col, label, th):
-    """Shrinkage % bar chart for one dimension, styled for slides."""
+def breakdown_df(dim_col):
+    """Shrinkage % per value of one dimension (highest first)."""
     d = (filtered.groupby(dim_col)
          .agg(Roster=("Roster Count", "sum"), Attendance=("Attendance Count", "sum"))
          .reset_index())
     d = d[(d[dim_col] != "") & (d["Roster"] > 0)]
     d["Shrinkage %"] = shrinkage(d["Roster"], d["Attendance"])
-    d = d.sort_values("Shrinkage %", ascending=False)
+    return d.sort_values("Shrinkage %", ascending=False)
+
+
+def breakdown_snapshot(dim_col, label, th):
+    """Shrinkage % bar chart for one dimension, styled for slides."""
+    d = breakdown_df(dim_col)
 
     fig = px.bar(d, x=dim_col, y="Shrinkage %", text="Shrinkage %")
     fig.update_traces(marker_color=th["bar"], texttemplate="%{text:.1f}%", textposition="outside",
@@ -462,6 +471,157 @@ if "Location" in filtered.columns:
     st.markdown("**3️⃣ Shrinkage % — Location wise**")
     st.plotly_chart(breakdown_snapshot("Location", "Location", theme), use_container_width=True,
                     config=export_config("shrinkage_location_wise", 1600, 700))
+
+# ---------------------------------------------------
+# One-click PowerPoint (native, editable charts)
+# ---------------------------------------------------
+try:
+    from io import BytesIO
+    from pptx import Presentation
+    from pptx.util import Inches, Pt
+    from pptx.dml.color import RGBColor
+    from pptx.chart.data import CategoryChartData
+    from pptx.enum.chart import XL_CHART_TYPE, XL_LABEL_POSITION
+    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
+    from pptx.enum.shapes import MSO_SHAPE
+    PPTX_OK = True
+except ImportError:
+    PPTX_OK = False
+
+
+def _rgb(hex_color):
+    return RGBColor.from_string(hex_color.lstrip("#").upper())
+
+
+def _add_text(slide, text, left, top, width, height, size, color, bold=False, align=None):
+    tb = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
+    tf = tb.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    if align is not None:
+        p.alignment = align
+    r = p.add_run()
+    r.text = text
+    r.font.size, r.font.bold, r.font.name = Pt(size), bold, "Calibri"
+    r.font.color.rgb = _rgb(color)
+
+
+def _new_slide(prs, th, title, subtitle, footer):
+    slide = prs.slides.add_slide(prs.slide_layouts[6])          # blank layout
+    slide.background.fill.solid()
+    slide.background.fill.fore_color.rgb = _rgb(th["bg"])
+    _add_text(slide, title, 0.5, 0.35, 12.3, 0.7, 30, th["text"], bold=True)
+    _add_text(slide, subtitle, 0.5, 1.0, 12.3, 0.4, 14, th["muted"])
+    _add_text(slide, footer, 0.5, 6.95, 12.3, 0.35, 11, th["muted"])
+    return slide
+
+
+def _summary_slide(prs, th, items, subtitle, footer):
+    slide = _new_slide(prs, th, "Shrinkage Summary", subtitle, footer)
+    n, gap, margin = len(items), 0.2, 0.5
+    w = (13.333 - 2 * margin - gap * (n - 1)) / n
+    for i, (title, value) in enumerate(items):
+        shp = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(margin + i * (w + gap)),
+                                     Inches(2.4), Inches(w), Inches(2.3))
+        shp.adjustments[0] = 0.12
+        shp.fill.solid()
+        shp.fill.fore_color.rgb = _rgb(th["card"])
+        shp.line.color.rgb = _rgb(th["border"])
+        shp.line.width = Pt(1.75)
+        shp.shadow.inherit = False
+        tf = shp.text_frame
+        tf.word_wrap = True
+        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
+        p1 = tf.paragraphs[0]
+        p1.alignment = PP_ALIGN.CENTER
+        r1 = p1.add_run()
+        r1.text = title
+        r1.font.size, r1.font.name = Pt(14), "Calibri"
+        r1.font.color.rgb = _rgb(th["muted"])
+        p2 = tf.add_paragraph()
+        p2.alignment = PP_ALIGN.CENTER
+        r2 = p2.add_run()
+        r2.text = str(value)
+        r2.font.size, r2.font.bold, r2.font.name = Pt(34), True, "Calibri"
+        r2.font.color.rgb = _rgb(th["text"])
+
+
+def _bar_slide(prs, th, title, subtitle, footer, labels, values):
+    slide = _new_slide(prs, th, title, subtitle, footer)
+    cd = CategoryChartData()
+    cd.categories = labels
+    cd.add_series("Shrinkage %", [float(v) for v in values])
+    chart = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.5), Inches(1.6),
+                                   Inches(12.33), Inches(5.25), cd).chart
+    chart.has_legend = False
+    chart.has_title = False
+    chart.font.size, chart.font.name = Pt(12), "Calibri"
+    chart.font.color.rgb = _rgb(th["text"])
+
+    plot = chart.plots[0]
+    plot.gap_width = 60
+    plot.has_data_labels = True
+    dl = plot.data_labels
+    dl.number_format, dl.number_format_is_linked = '0.0"%"', False
+    dl.position = XL_LABEL_POSITION.OUTSIDE_END
+    dl.font.size = Pt(12)
+    dl.font.color.rgb = _rgb(th["text"])
+    plot.series[0].format.fill.solid()
+    plot.series[0].format.fill.fore_color.rgb = _rgb(th["bar"])
+
+    va = chart.value_axis
+    va.has_major_gridlines = True
+    va.major_gridlines.format.line.color.rgb = _rgb(th["grid"])
+    va.format.line.fill.background()
+    va.tick_labels.number_format, va.tick_labels.number_format_is_linked = '0"%"', False
+    va.tick_labels.font.color.rgb = _rgb(th["text"])
+    ca = chart.category_axis
+    ca.has_major_gridlines = False
+    ca.format.line.color.rgb = _rgb(th["grid"])
+    ca.tick_labels.font.color.rgb = _rgb(th["text"])
+
+
+def build_pptx(th, items, pod_df, loc_df, subtitle, footer):
+    prs = Presentation()
+    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)     # 16:9
+    _summary_slide(prs, th, items, subtitle, footer)
+    if pod_df is not None and not pod_df.empty:
+        _bar_slide(prs, th, "Shrinkage % — POD Leader wise", subtitle, footer,
+                   pod_df["POD Leader"].tolist(), pod_df["Shrinkage %"].tolist())
+    if loc_df is not None and not loc_df.empty:
+        _bar_slide(prs, th, "Shrinkage % — Location wise", subtitle, footer,
+                   loc_df["Location"].tolist(), loc_df["Shrinkage %"].tolist())
+    buf = BytesIO()
+    prs.save(buf)
+    return buf.getvalue()
+
+
+st.markdown("**📥 Get all three as an editable PowerPoint**")
+
+if PPTX_OK:
+    try:
+        label_map = {"Final": "Process"}
+        d_min, d_max = filtered["Date"].min(), filtered["Date"].max()
+        ppt_subtitle = f"Period: {d_min:%d %b %Y} – {d_max:%d %b %Y}"
+        ppt_footer = "Filters: " + (", ".join(f"{label_map.get(k, k)}: {v}" for k, v in active_filters.items())
+                                    or "None (all data)")
+        pptx_bytes = build_pptx(
+            theme, summary_items,
+            breakdown_df("POD Leader") if "POD Leader" in filtered.columns else None,
+            breakdown_df("Location") if "Location" in filtered.columns else None,
+            ppt_subtitle, ppt_footer,
+        )
+        st.download_button(
+            "⬇️ Download PowerPoint (.pptx)", pptx_bytes, "Shrinkage_Snapshots.pptx",
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+            key="dl_pptx",
+        )
+        st.caption("3 slides (Summary, POD Leader wise, Location wise) using the selected image style and filters. "
+                   "The charts are native PowerPoint charts: right-click → Edit Data, or copy them into your own deck.")
+    except Exception as e:
+        st.error(f"Could not build the PowerPoint: {type(e).__name__}: {e}")
+else:
+    st.info("To enable the PowerPoint download, add a line `python-pptx` to requirements.txt in GitHub and redeploy.")
 
 st.markdown("---")
 
