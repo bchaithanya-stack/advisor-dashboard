@@ -45,8 +45,6 @@ section[data-testid="stSidebar"] {display:none;}
 .stButton>button{ background:#5b5ef7; color:white; border:none; border-radius:10px; padding:10px; font-weight:600; }
 .stButton>button:hover{ background:#7b7eff; }
 .stSelectbox div[data-baseweb="select"]{ background:#17194c; color:white; }
-.stMultiSelect div[data-baseweb="select"]{ background:#17194c; color:white; }
-.stMultiSelect span[data-baseweb="tag"]{ background:#5b5ef7; color:white; }
 [data-testid="stDataFrame"]{ background:#151846; border-radius:15px; }
 .streamlit-expanderHeader{ background:#1d2057; border-radius:10px; }
 h1{ color:white; font-weight:700; }
@@ -188,35 +186,29 @@ st.subheader("🔍 Filters")
 filtered = df.copy()
 
 
-def cascade_multiselect(label, column, container, key):
-    """Multiselect whose options depend on filters applied so far.
-    Empty selection = no filtering (acts like 'All')."""
+def cascade_select(label, column, container, key):
+    """Selectbox whose options depend on filters applied so far."""
     global filtered
     if column not in filtered.columns:
-        return []
-    options = sorted([x for x in filtered[column].dropna().unique() if x != ""])
-
-    # Drop previously selected values that are no longer valid after upstream filters change
-    if key in st.session_state:
-        st.session_state[key] = [v for v in st.session_state[key] if v in options]
-
+        return "All"
+    options = ["All"] + sorted([x for x in filtered[column].dropna().unique() if x != ""])
     with container:
-        choice = st.multiselect(label, options, key=key, placeholder="All")
-    if choice:
-        filtered = filtered[filtered[column].isin(choice)]
+        choice = st.selectbox(label, options, key=key)
+    if choice != "All":
+        filtered = filtered[filtered[column] == choice]
     return choice
 
 
 r1 = st.columns(4)
-cascade_multiselect("🔹 Location:", "Location", r1[0], "f_loc")
-cascade_multiselect("🔹 Process (Final):", "Final", r1[1], "f_final")
-cascade_multiselect("🔹 POD Leader:", "POD Leader", r1[2], "f_pod")
-cascade_multiselect("🔹 CM:", "CM", r1[3], "f_cm")
+cascade_select("🔹 Location:", "Location", r1[0], "f_loc")
+cascade_select("🔹 Process (Final):", "Final", r1[1], "f_final")
+cascade_select("🔹 POD Leader:", "POD Leader", r1[2], "f_pod")
+cascade_select("🔹 CM:", "CM", r1[3], "f_cm")
 
 r2 = st.columns(4)
-cascade_multiselect("🔹 AM:", "AM", r2[0], "f_am")
-cascade_multiselect("🔹 TL:", "TL", r2[1], "f_tl")
-cascade_multiselect("🔹 Active Status:", "Active Status", r2[2], "f_active")
+cascade_select("🔹 AM:", "AM", r2[0], "f_am")
+cascade_select("🔹 TL:", "TL", r2[1], "f_tl")
+cascade_select("🔹 Active Status:", "Active Status", r2[2], "f_active")
 
 min_d, max_d = df["Date"].min().date(), df["Date"].max().date()
 with r2[3]:
@@ -293,7 +285,7 @@ st.markdown("---")
 # ---------------------------------------------------
 # Chart 3 — Day-level Shrinkage % by Process / TL / CM
 # ---------------------------------------------------
-st.subheader("📉 Day-Level Shrinkage % — Process / TL / CM / POD Leader / Location")
+st.subheader("📉 Day-Level Shrinkage % — Process / TL / CM")
 
 
 def day_level_by(dim, label, key):
@@ -336,9 +328,7 @@ def day_level_by(dim, label, key):
         st.dataframe(pivot, use_container_width=True)
 
 
-tab_proc, tab_tl, tab_cm, tab_pod, tab_loc = st.tabs(
-    ["🏭 Process", "👔 TL", "🧑‍💼 CM", "🧭 POD Leader", "📍 Location"]
-)
+tab_proc, tab_tl, tab_cm = st.tabs(["🏭 Process", "👔 TL", "🧑‍💼 CM"])
 
 with tab_proc:
     day_level_by("Final", "Process", "dl_proc")
@@ -346,10 +336,6 @@ with tab_tl:
     day_level_by("TL", "TL", "dl_tl")
 with tab_cm:
     day_level_by("CM", "CM", "dl_cm")
-with tab_pod:
-    day_level_by("POD Leader", "POD Leader", "dl_pod")
-with tab_loc:
-    day_level_by("Location", "Location", "dl_loc")
 
 st.markdown("---")
 
@@ -374,6 +360,108 @@ fig3 = px.bar(by_dim, x=dim, y="Shrinkage %", text="Shrinkage %",
 fig3.update_traces(texttemplate="%{text:.1f}%")
 fig3.update_layout(**PLOT_LAYOUT, height=420, coloraxis_showscale=False)
 st.plotly_chart(fig3, use_container_width=True)
+
+st.markdown("---")
+
+# ---------------------------------------------------
+# PowerPoint Snapshots — export-ready visuals
+# ---------------------------------------------------
+st.subheader("📸 PowerPoint Snapshots")
+st.caption("Hover over a visual and click the 📷 camera icon (top-right of the visual) to download it "
+           "as a high-resolution PNG, then paste it into your slide. "
+           "All snapshots follow the filters selected above.")
+
+SNAP_THEMES = {
+    "dark": dict(bg="#090a2f", card="#17194c", border="#545eff", muted="#9da2ff",
+                 text="#ffffff", bar="#7f63ff", grid="#2a2d63"),
+    "light": dict(bg="#ffffff", card="#eef0ff", border="#5058d4", muted="#4b52b6",
+                  text="#1a1d53", bar="#5058d4", grid="#e3e5f5"),
+}
+
+snap_choice = st.radio("Image style:", ["🌙 Dark (matches dashboard)", "☀️ Light (white background)"],
+                       horizontal=True, key="snap_style")
+theme = SNAP_THEMES["dark"] if snap_choice.startswith("🌙") else SNAP_THEMES["light"]
+
+
+def export_config(name, width, height):
+    """Plotly modebar config -> the camera icon downloads a crisp PNG of this size."""
+    return {
+        "displaylogo": False,
+        "toImageButtonOptions": {"format": "png", "filename": name,
+                                 "width": width, "height": height, "scale": 2},
+    }
+
+
+def summary_figure(items, th):
+    """Row of KPI cards drawn as a Plotly figure so it can be exported as an image."""
+    n = len(items)
+    gap = 0.02
+    w = (1 - gap * (n - 1)) / n
+    fig = go.Figure()
+    for i, (title, value) in enumerate(items):
+        x0 = i * (w + gap)
+        x1 = x0 + w
+        xm = (x0 + x1) / 2
+        fig.add_shape(type="rect", xref="paper", yref="paper", x0=x0, x1=x1, y0=0.04, y1=0.96,
+                      fillcolor=th["card"], line=dict(color=th["border"], width=2), layer="below")
+        fig.add_annotation(xref="paper", yref="paper", x=xm, y=0.70, text=title, showarrow=False,
+                           xanchor="center", yanchor="middle", font=dict(size=16, color=th["muted"]))
+        fig.add_annotation(xref="paper", yref="paper", x=xm, y=0.36, text=f"<b>{value}</b>",
+                           showarrow=False, xanchor="center", yanchor="middle",
+                           font=dict(size=36, color=th["text"]))
+    fig.update_layout(height=190, margin=dict(l=8, r=8, t=8, b=8),
+                      paper_bgcolor=th["bg"], plot_bgcolor=th["bg"],
+                      xaxis=dict(visible=False), yaxis=dict(visible=False))
+    return fig
+
+
+def breakdown_snapshot(dim_col, label, th):
+    """Shrinkage % bar chart for one dimension, styled for slides."""
+    d = (filtered.groupby(dim_col)
+         .agg(Roster=("Roster Count", "sum"), Attendance=("Attendance Count", "sum"))
+         .reset_index())
+    d = d[(d[dim_col] != "") & (d["Roster"] > 0)]
+    d["Shrinkage %"] = shrinkage(d["Roster"], d["Attendance"])
+    d = d.sort_values("Shrinkage %", ascending=False)
+
+    fig = px.bar(d, x=dim_col, y="Shrinkage %", text="Shrinkage %")
+    fig.update_traces(marker_color=th["bar"], texttemplate="%{text:.1f}%", textposition="outside",
+                      cliponaxis=False, textfont=dict(color=th["text"], size=14))
+    fig.update_layout(
+        title=dict(text=f"<b>Shrinkage % — {label} wise</b>", font=dict(size=22, color=th["text"]), x=0.01),
+        paper_bgcolor=th["bg"], plot_bgcolor=th["bg"], font=dict(color=th["text"]),
+        height=470, margin=dict(l=40, r=20, t=70, b=60),
+        xaxis=dict(title="", tickfont=dict(size=13), showgrid=False),
+        yaxis=dict(title="Shrinkage %", gridcolor=th["grid"], zeroline=False),
+        bargap=0.35,
+    )
+    return fig
+
+
+# 1) Summary strip
+adv_in_view = filtered["EMP ID"].nunique() if "EMP ID" in filtered.columns else "-"
+summary_items = [
+    ("Overall Shrinkage %", f"{overall_shrink:.2f}%"),
+    ("Avg Daily Shrinkage %", f"{daily['Shrinkage %'].mean():.2f}%"),
+    ("Avg Daily Roster", f"{daily['Roster'].mean():,.1f}"),
+    ("Avg Daily Attendance", f"{daily['Attendance'].mean():,.1f}"),
+    ("Advisors in View", f"{adv_in_view}"),
+]
+st.markdown("**1️⃣ Summary**")
+st.plotly_chart(summary_figure(summary_items, theme), use_container_width=True,
+                config=export_config("shrinkage_summary", 1600, 220))
+
+# 2) POD Leader wise
+if "POD Leader" in filtered.columns:
+    st.markdown("**2️⃣ Shrinkage % — POD Leader wise**")
+    st.plotly_chart(breakdown_snapshot("POD Leader", "POD Leader", theme), use_container_width=True,
+                    config=export_config("shrinkage_pod_leader_wise", 1600, 700))
+
+# 3) Location wise
+if "Location" in filtered.columns:
+    st.markdown("**3️⃣ Shrinkage % — Location wise**")
+    st.plotly_chart(breakdown_snapshot("Location", "Location", theme), use_container_width=True,
+                    config=export_config("shrinkage_location_wise", 1600, 700))
 
 st.markdown("---")
 
