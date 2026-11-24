@@ -368,6 +368,30 @@ st.plotly_chart(fig3, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------
+# Chart 5 — Attendance Count by chosen dimension (NEW)
+# ---------------------------------------------------
+st.subheader("✅ Attendance Count Breakdown")
+
+att_dim = st.selectbox("Break down by:", dim_options, key="att_breakdown_dim")
+
+by_att = (
+    filtered.groupby(att_dim)
+    .agg(Roster=("Roster Count", "sum"), Attendance=("Attendance Count", "sum"))
+    .reset_index()
+)
+by_att = by_att[(by_att[att_dim] != "") & (by_att["Attendance"] >= 0)]
+by_att = by_att.sort_values("Attendance", ascending=False)
+
+fig_att = px.bar(by_att, x=att_dim, y="Attendance", text="Attendance",
+                 color="Attendance", color_continuous_scale="Teal")
+fig_att.update_traces(texttemplate="%{text:,.0f}", textposition="outside", cliponaxis=False)
+fig_att.update_layout(**PLOT_LAYOUT, height=420, yaxis_title="Attendance Count",
+                      coloraxis_showscale=False)
+st.plotly_chart(fig_att, use_container_width=True)
+
+st.markdown("---")
+
+# ---------------------------------------------------
 # PowerPoint Snapshots — export-ready visuals
 # ---------------------------------------------------
 st.subheader("📸 PowerPoint Snapshots")
@@ -447,6 +471,33 @@ def breakdown_snapshot(dim_col, label, th):
     return fig
 
 
+def attendance_df(dim_col):
+    """Attendance Count per value of one dimension (highest first)."""
+    d = (filtered.groupby(dim_col)
+         .agg(Roster=("Roster Count", "sum"), Attendance=("Attendance Count", "sum"))
+         .reset_index())
+    d = d[d[dim_col] != ""]
+    return d.sort_values("Attendance", ascending=False)
+
+
+def attendance_snapshot(dim_col, label, th):
+    """Attendance Count bar chart for one dimension, styled for slides."""
+    d = attendance_df(dim_col)
+
+    fig = px.bar(d, x=dim_col, y="Attendance", text="Attendance")
+    fig.update_traces(marker_color=th["bar"], texttemplate="%{text:,.0f}", textposition="outside",
+                      cliponaxis=False, textfont=dict(color=th["text"], size=14))
+    fig.update_layout(
+        title=dict(text=f"<b>Attendance Count — {label} wise</b>", font=dict(size=22, color=th["text"]), x=0.01),
+        paper_bgcolor=th["bg"], plot_bgcolor=th["bg"], font=dict(color=th["text"]),
+        height=470, margin=dict(l=40, r=20, t=70, b=60),
+        xaxis=dict(title="", tickfont=dict(size=13), showgrid=False),
+        yaxis=dict(title="Attendance Count", gridcolor=th["grid"], zeroline=False),
+        bargap=0.35,
+    )
+    return fig
+
+
 # 1) Summary strip
 adv_in_view = filtered["EMP ID"].nunique() if "EMP ID" in filtered.columns else "-"
 summary_items = [
@@ -471,6 +522,18 @@ if "Location" in filtered.columns:
     st.markdown("**3️⃣ Shrinkage % — Location wise**")
     st.plotly_chart(breakdown_snapshot("Location", "Location", theme), use_container_width=True,
                     config=export_config("shrinkage_location_wise", 1600, 700))
+
+# 4) Attendance Count — POD Leader wise
+if "POD Leader" in filtered.columns:
+    st.markdown("**4️⃣ Attendance Count — POD Leader wise**")
+    st.plotly_chart(attendance_snapshot("POD Leader", "POD Leader", theme), use_container_width=True,
+                    config=export_config("attendance_pod_leader_wise", 1600, 700))
+
+# 5) Attendance Count — Location wise
+if "Location" in filtered.columns:
+    st.markdown("**5️⃣ Attendance Count — Location wise**")
+    st.plotly_chart(attendance_snapshot("Location", "Location", theme), use_container_width=True,
+                    config=export_config("attendance_location_wise", 1600, 700))
 
 # ---------------------------------------------------
 # One-click PowerPoint (native, editable charts)
@@ -546,11 +609,12 @@ def _summary_slide(prs, th, items, subtitle, footer):
         r2.font.color.rgb = _rgb(th["text"])
 
 
-def _bar_slide(prs, th, title, subtitle, footer, labels, values):
+def _bar_slide(prs, th, title, subtitle, footer, labels, values,
+               series_name="Shrinkage %", label_fmt='0.0"%"', axis_fmt='0"%"'):
     slide = _new_slide(prs, th, title, subtitle, footer)
     cd = CategoryChartData()
     cd.categories = labels
-    cd.add_series("Shrinkage %", [float(v) for v in values])
+    cd.add_series(series_name, [float(v) for v in values])
     chart = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.5), Inches(1.6),
                                    Inches(12.33), Inches(5.25), cd).chart
     chart.has_legend = False
@@ -562,7 +626,7 @@ def _bar_slide(prs, th, title, subtitle, footer, labels, values):
     plot.gap_width = 60
     plot.has_data_labels = True
     dl = plot.data_labels
-    dl.number_format, dl.number_format_is_linked = '0.0"%"', False
+    dl.number_format, dl.number_format_is_linked = label_fmt, False
     dl.position = XL_LABEL_POSITION.OUTSIDE_END
     dl.font.size = Pt(12)
     dl.font.color.rgb = _rgb(th["text"])
@@ -573,7 +637,7 @@ def _bar_slide(prs, th, title, subtitle, footer, labels, values):
     va.has_major_gridlines = True
     va.major_gridlines.format.line.color.rgb = _rgb(th["grid"])
     va.format.line.fill.background()
-    va.tick_labels.number_format, va.tick_labels.number_format_is_linked = '0"%"', False
+    va.tick_labels.number_format, va.tick_labels.number_format_is_linked = axis_fmt, False
     va.tick_labels.font.color.rgb = _rgb(th["text"])
     ca = chart.category_axis
     ca.has_major_gridlines = False
@@ -581,7 +645,7 @@ def _bar_slide(prs, th, title, subtitle, footer, labels, values):
     ca.tick_labels.font.color.rgb = _rgb(th["text"])
 
 
-def build_pptx(th, items, pod_df, loc_df, subtitle, footer):
+def build_pptx(th, items, pod_df, loc_df, att_pod_df, att_loc_df, subtitle, footer):
     prs = Presentation()
     prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)     # 16:9
     _summary_slide(prs, th, items, subtitle, footer)
@@ -591,12 +655,20 @@ def build_pptx(th, items, pod_df, loc_df, subtitle, footer):
     if loc_df is not None and not loc_df.empty:
         _bar_slide(prs, th, "Shrinkage % — Location wise", subtitle, footer,
                    loc_df["Location"].tolist(), loc_df["Shrinkage %"].tolist())
+    if att_pod_df is not None and not att_pod_df.empty:
+        _bar_slide(prs, th, "Attendance Count — POD Leader wise", subtitle, footer,
+                   att_pod_df["POD Leader"].tolist(), att_pod_df["Attendance"].tolist(),
+                   series_name="Attendance Count", label_fmt='#,##0', axis_fmt='#,##0')
+    if att_loc_df is not None and not att_loc_df.empty:
+        _bar_slide(prs, th, "Attendance Count — Location wise", subtitle, footer,
+                   att_loc_df["Location"].tolist(), att_loc_df["Attendance"].tolist(),
+                   series_name="Attendance Count", label_fmt='#,##0', axis_fmt='#,##0')
     buf = BytesIO()
     prs.save(buf)
     return buf.getvalue()
 
 
-st.markdown("**📥 Get all three as an editable PowerPoint**")
+st.markdown("**📥 Get all as an editable PowerPoint**")
 
 if PPTX_OK:
     try:
@@ -609,6 +681,8 @@ if PPTX_OK:
             theme, summary_items,
             breakdown_df("POD Leader") if "POD Leader" in filtered.columns else None,
             breakdown_df("Location") if "Location" in filtered.columns else None,
+            attendance_df("POD Leader") if "POD Leader" in filtered.columns else None,
+            attendance_df("Location") if "Location" in filtered.columns else None,
             ppt_subtitle, ppt_footer,
         )
         st.download_button(
@@ -616,7 +690,8 @@ if PPTX_OK:
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             key="dl_pptx",
         )
-        st.caption("3 slides (Summary, POD Leader wise, Location wise) using the selected image style and filters. "
+        st.caption("5 slides (Summary, Shrinkage % by POD Leader & Location, Attendance Count by POD Leader & Location) "
+                   "using the selected image style and filters. "
                    "The charts are native PowerPoint charts: right-click → Edit Data, or copy them into your own deck.")
     except Exception as e:
         st.error(f"Could not build the PowerPoint: {type(e).__name__}: {e}")
@@ -636,3 +711,8 @@ with st.expander("📄 Day-Level Data Table"):
 
 with st.expander(f"📄 {dim}-wise Summary Table"):
     st.dataframe(by_dim, use_container_width=True)
+
+with st.expander(f"📄 {att_dim}-wise Attendance Count Table"):
+    st.dataframe(by_att, use_container_width=True)
+    st.download_button("⬇️ Download Attendance Breakdown CSV", by_att.to_csv(index=False),
+                       "attendance_breakdown.csv", "text/csv", key="dl_att_csv")
