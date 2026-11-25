@@ -73,6 +73,10 @@ EXPECTED_COLS = [
     "Attendance Status", "Roster Count", "Attendance Count", "Shrinkage %",
 ]
 
+# Values to leave out of the dashboard completely (matched case-insensitively)
+EXCLUDE_FINAL = ["Excess", "Maternity"]
+EXCLUDE_LENDER = ["Excess", "Maternity"]
+
 PLOT_LAYOUT = dict(
     template="plotly_dark",
     paper_bgcolor="#090a2f",
@@ -144,6 +148,11 @@ def load_data() -> pd.DataFrame:
                     "Active Status", "Name"]:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
+
+        # Remove excluded Final / Lender values everywhere in the dashboard
+        for col, bad in (("Final", EXCLUDE_FINAL), ("Lender", EXCLUDE_LENDER)):
+            if col in df.columns:
+                df = df[~df[col].str.lower().isin([b.lower() for b in bad])]
 
         return df
 
