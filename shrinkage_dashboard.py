@@ -471,14 +471,14 @@ st.plotly_chart(fig_cnt, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------
-# Chart 7 — Advisor-wise Attendance Summary (every advisor in view)
+# Chart 7 — Attendance Summary (Advisor / Lender / TL / CM / POD Leader wise)
 # ---------------------------------------------------
-st.subheader("👤 Advisor-wise Attendance Summary")
-st.caption("One row per advisor. Attendance Status codes are grouped as: Present = Present / NA / New · "
-           "Leave = ML / CO / PL / SL / EL · Absent = LOP · plus HalfDay, WO (Week Off) and Holiday as they are. "
+st.subheader("📋 Attendance Summary")
+st.caption("Attendance Status is grouped as: Present = Present / NA / New · Leave = ML / CO / PL / SL / EL · "
+           "Absent = LOP · plus HalfDay, WO (Week Off) and Holiday as they are. "
            "Working Days = Present + 0.5 × HalfDay. Roster Days = days with Roster Count > 0.")
 
-# Attendance Status (upper-case) -> group used in this table
+# Attendance Status (upper-case) -> group used in these tables
 STATUS_MAP = {
     "HOLIDAY": "Holiday", "PRESENT": "Present", "WO": "Week Off",
     "HALFDAY": "HalfDay", "HALF DAY": "HalfDay",
@@ -487,8 +487,93 @@ STATUS_MAP = {
 }
 STATUS_COLS = ["Present", "HalfDay", "Leave", "Absent", "Week Off", "Holiday", "Other", "Not Marked"]
 
+# Column colours used to shade the tables
+COL_COLORS = {
+    "Advisors": "#5b5ef7", "Total Days": "#5b5ef7", "Advisor-Days": "#5b5ef7",
+    "Roster Days": "#8b5cf6", "Working Days": "#14b8a6",
+    "Present": "#22c55e", "HalfDay": "#f59e0b", "Leave": "#3b82f6", "Absent": "#ef4444",
+    "Week Off": "#a855f7", "Holiday": "#06b6d4", "Other": "#9ca3af", "Not Marked": "#9ca3af",
+}
+_SHADE_LOW = (30, 33, 96)      # dark indigo, same family as the dashboard background
+
+
+def _shade_scale(col, hex_color):
+    """Dark -> accent colour, scaled to the column's maximum."""
+    hi = tuple(int(hex_color[i:i + 2], 16) for i in (1, 3, 5))
+    mx = col.max()
+    out = []
+    for v in col:
+        t = 0 if mx <= 0 else min(max(v / mx, 0), 1)
+        rgb = tuple(int(_SHADE_LOW[i] + (hi[i] - _SHADE_LOW[i]) * t) for i in range(3))
+        out.append(f"background-color: rgb{rgb}; color: white; font-weight: 600")
+    return out
+
+
+def _shade_pct(col):
+    """Red (0%) -> green (100%)."""
+    red, green = (190, 45, 65), (25, 160, 110)
+    out = []
+    for v in col:
+        t = min(max(v / 100, 0), 1)
+        rgb = tuple(int(red[i] + (green[i] - red[i]) * t) for i in range(3))
+        out.append(f"background-color: rgb{rgb}; color: white; font-weight: 700")
+    return out
+
+
+def style_summary(tbl, text_cols):
+    sty = tbl.style
+    if text_cols:
+        sty = sty.set_properties(subset=text_cols, **{"background-color": "#262a75", "color": "#e6e8ff",
+                                                       "font-weight": "600"})
+    for c in tbl.columns:
+        if c in COL_COLORS:
+            sty = sty.apply(_shade_scale, hex_color=COL_COLORS[c], subset=[c])
+    if "Attendance % (vs Roster)" in tbl.columns:
+        sty = sty.apply(_shade_pct, subset=["Attendance % (vs Roster)"])
+    return sty.format({"Working Days": "{:.1f}", "Attendance % (vs Roster)": "{:.1f}%"})
+
+
+def build_summary(src, key, attr_cols):
+    """key = 'EMP ID' -> one row per advisor; otherwise one row per value of that column."""
+    if key != "EMP ID":
+        src = src[src[key] != ""]
+    counts = (
+        src.pivot_table(index=key, columns="Status Group", values="Date", aggfunc="count", fill_value=0)
+        .reindex(columns=STATUS_COLS, fill_value=0)
+    )
+    grp = src.groupby(key)
+    if key == "EMP ID":
+        attrs = src.sort_values("Date").groupby(key)[attr_cols].last()
+        days = grp.agg(**{"Total Days": ("Date", "nunique"), "Roster Days": ("_roster_day", "sum")})
+        tbl = attrs.join(days).join(counts)
+        lead = ["EMP ID"] + attr_cols
+        count_cols = ["Total Days", "Roster Days", "Working Days"]
+    else:
+        days = grp.agg(**{"Advisors": ("EMP ID", "nunique"), "Advisor-Days": ("Date", "count"),
+                          "Roster Days": ("_roster_day", "sum")})
+        tbl = days.join(counts)
+        lead = [key]
+        count_cols = ["Advisors", "Advisor-Days", "Roster Days", "Working Days"]
+
+    tbl = tbl.reset_index()
+    tbl["Working Days"] = tbl["Present"] + 0.5 * tbl["HalfDay"]
+    tbl["Attendance % (vs Roster)"] = (
+        (tbl["Working Days"] / tbl["Roster Days"] * 100).where(tbl["Roster Days"] > 0, 0).round(1)
+    )
+    for c in ["Other", "Not Marked"]:                      # hide catch-all columns when empty
+        if tbl[c].sum() == 0:
+            tbl = tbl.drop(columns=c)
+    status_present = [c for c in STATUS_COLS if c in tbl.columns]
+    tbl = tbl[lead + count_cols + status_present + ["Attendance % (vs Roster)"]]
+    if key == "EMP ID":
+        tbl = tbl.sort_values("Name" if "Name" in tbl.columns else "EMP ID")
+    else:
+        tbl = tbl.sort_values("Roster Days", ascending=False)
+    return tbl, lead
+
+
 if "Attendance Status" not in filtered.columns or "EMP ID" not in filtered.columns:
-    st.info("This table needs the 'EMP ID' and 'Attendance Status' columns in the sheet.")
+    st.info("These tables need the 'EMP ID' and 'Attendance Status' columns in the sheet.")
 else:
     adv_period = st.radio(
         "Period:",
@@ -506,40 +591,27 @@ else:
     )
     adv_src["_roster_day"] = (adv_src["Roster Count"] > 0).astype(int)
 
-    counts = (
-        adv_src.pivot_table(index="EMP ID", columns="Status Group", values="Date",
-                            aggfunc="count", fill_value=0)
-        .reindex(columns=STATUS_COLS, fill_value=0)
-    )
-    attr_cols = [c for c in ["Name", "TL", "AM", "CM", "POD Leader", "Location", "Lender", "Final",
-                             "Active Status"] if c in adv_src.columns]
-    attrs = adv_src.sort_values("Date").groupby("EMP ID")[attr_cols].last()
-    days = adv_src.groupby("EMP ID").agg(**{"Total Days": ("Date", "nunique"),
-                                            "Roster Days": ("_roster_day", "sum")})
+    st.caption(f"Period covered: {adv_src['Date'].min():%d %b %Y} – {adv_src['Date'].max():%d %b %Y}")
 
-    adv_tbl = attrs.join(days).join(counts).reset_index()
-    adv_tbl["Working Days"] = adv_tbl["Present"] + 0.5 * adv_tbl["HalfDay"]
-    adv_tbl["Attendance % (vs Roster)"] = (
-        (adv_tbl["Working Days"] / adv_tbl["Roster Days"] * 100)
-        .where(adv_tbl["Roster Days"] > 0, 0).round(1)
-    )
+    adv_attr_cols = [c for c in ["Name", "TL", "POD Leader", "Location", "Lender"] if c in adv_src.columns]
+    summary_views = [("👤 Advisor", "EMP ID", "advisor_attendance_summary.csv"),
+                     ("🏦 Lender", "Lender", "lender_attendance_summary.csv"),
+                     ("👔 TL", "TL", "tl_attendance_summary.csv"),
+                     ("🧑‍💼 CM", "CM", "cm_attendance_summary.csv"),
+                     ("🧭 POD Leader", "POD Leader", "pod_leader_attendance_summary.csv")]
 
-    # Hide the catch-all columns when there is nothing in them
-    for _c in ["Other", "Not Marked"]:
-        if adv_tbl[_c].sum() == 0:
-            adv_tbl = adv_tbl.drop(columns=_c)
+    for tab, (tab_label, key_col, csv_name) in zip(st.tabs([v[0] for v in summary_views]), summary_views):
+        with tab:
+            if key_col not in adv_src.columns:
+                st.info(f"Column '{key_col}' was not found in the sheet.")
+                continue
+            tbl, text_cols = build_summary(adv_src, key_col, adv_attr_cols)
+            st.caption(f"{len(tbl):,} {'advisors' if key_col == 'EMP ID' else 'rows'}")
+            st.dataframe(style_summary(tbl, text_cols), use_container_width=True, hide_index=True)
+            st.download_button("⬇️ Download CSV", tbl.to_csv(index=False), csv_name, "text/csv",
+                               key=f"dl_sum_{key_col.replace(' ', '_')}")
 
-    lead = ["EMP ID"] + attr_cols
-    metrics = ["Total Days", "Roster Days", "Working Days"] + \
-              [c for c in STATUS_COLS if c in adv_tbl.columns] + ["Attendance % (vs Roster)"]
-    adv_tbl = adv_tbl[lead + metrics].sort_values("Name" if "Name" in lead else "EMP ID")
-
-    st.caption(f"{len(adv_tbl):,} advisors · {adv_src['Date'].min():%d %b %Y} – {adv_src['Date'].max():%d %b %Y}")
-    st.dataframe(adv_tbl, use_container_width=True, hide_index=True)
-    st.download_button("⬇️ Download Advisor Attendance CSV", adv_tbl.to_csv(index=False),
-                       "advisor_attendance_summary.csv", "text/csv", key="dl_adv_csv")
-
-    if "Other" in adv_tbl.columns:
+    if (adv_src["Status Group"] == "Other").any():
         _unk = sorted(_raw[adv_src["Status Group"] == "Other"].unique())
         st.warning("Some Attendance Status values are not in the mapping and are counted under 'Other': "
                    + ", ".join(_unk))
