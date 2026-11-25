@@ -45,6 +45,8 @@ section[data-testid="stSidebar"] {display:none;}
 .stButton>button{ background:#5b5ef7; color:white; border:none; border-radius:10px; padding:10px; font-weight:600; }
 .stButton>button:hover{ background:#7b7eff; }
 .stSelectbox div[data-baseweb="select"]{ background:#17194c; color:white; }
+.stMultiSelect div[data-baseweb="select"]{ background:#17194c; color:white; }
+.stMultiSelect span[data-baseweb="tag"]{ background:#5b5ef7; color:white; }
 [data-testid="stDataFrame"]{ background:#151846; border-radius:15px; }
 .streamlit-expanderHeader{ background:#1d2057; border-radius:10px; }
 h1{ color:white; font-weight:700; }
@@ -67,7 +69,7 @@ SCOPES = [
 
 EXPECTED_COLS = [
     "EMP ID", "Name", "Email ID", "Date", "DOJ", "TL", "AM", "CM", "Final",
-    "POD Leader", "Location", "Active Status", "Roster Status",
+    "POD Leader", "Location", "Lender", "Active Status", "Roster Status",
     "Attendance Status", "Roster Count", "Attendance Count", "Shrinkage %",
 ]
 
@@ -138,7 +140,8 @@ def load_data() -> pd.DataFrame:
         for col in ["Roster Count", "Attendance Count"]:
             df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0)
 
-        for col in ["TL", "AM", "CM", "Final", "POD Leader", "Location", "Active Status", "Name"]:
+        for col in ["TL", "AM", "CM", "Final", "POD Leader", "Location", "Lender",
+                    "Active Status", "Name"]:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
 
@@ -195,6 +198,11 @@ def cascade_select(label, column, container, key):
     if column not in filtered.columns:
         return []
     options = sorted([x for x in filtered[column].dropna().unique() if x != ""])
+
+    # Drop previously selected values that are no longer valid after upstream filters change
+    if key in st.session_state:
+        st.session_state[key] = [v for v in st.session_state[key] if v in options]
+
     with container:
         choice = st.multiselect(label, options, key=key, placeholder="All")
     if choice:
@@ -213,9 +221,11 @@ r2 = st.columns(4)
 cascade_select("🔹 AM:", "AM", r2[0], "f_am")
 cascade_select("🔹 TL:", "TL", r2[1], "f_tl")
 cascade_select("🔹 Active Status:", "Active Status", r2[2], "f_active")
+cascade_select("🔹 Lender:", "Lender", r2[3], "f_lender")
 
+r3 = st.columns(4)
 min_d, max_d = df["Date"].min().date(), df["Date"].max().date()
-with r2[3]:
+with r3[0]:
     date_range = st.date_input("🔹 Date Range:", value=(min_d, max_d),
                                min_value=min_d, max_value=max_d, key="f_date")
 
@@ -287,9 +297,9 @@ st.plotly_chart(fig2, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------
-# Chart 3 — Day-level Shrinkage % by Process / TL / CM
+# Chart 3 — Day-level Shrinkage % by Process / TL / CM / Lender
 # ---------------------------------------------------
-st.subheader("📉 Day-Level Shrinkage % — Process / TL / CM")
+st.subheader("📉 Day-Level Shrinkage % — Process / TL / CM / Lender")
 
 
 def day_level_by(dim, label, key):
@@ -332,7 +342,7 @@ def day_level_by(dim, label, key):
         st.dataframe(pivot, use_container_width=True)
 
 
-tab_proc, tab_tl, tab_cm = st.tabs(["🏭 Process", "👔 TL", "🧑‍💼 CM"])
+tab_proc, tab_tl, tab_cm, tab_lender = st.tabs(["🏭 Process", "👔 TL", "🧑‍💼 CM", "🏦 Lender"])
 
 with tab_proc:
     day_level_by("Final", "Process", "dl_proc")
@@ -340,6 +350,8 @@ with tab_tl:
     day_level_by("TL", "TL", "dl_tl")
 with tab_cm:
     day_level_by("CM", "CM", "dl_cm")
+with tab_lender:
+    day_level_by("Lender", "Lender", "dl_lender")
 
 st.markdown("---")
 
@@ -348,7 +360,8 @@ st.markdown("---")
 # ---------------------------------------------------
 st.subheader("📊 Shrinkage % Breakdown")
 
-dim_options = [c for c in ["TL", "AM", "CM", "POD Leader", "Location", "Final"] if c in filtered.columns]
+dim_options = [c for c in ["TL", "AM", "CM", "POD Leader", "Location", "Lender", "Final"]
+               if c in filtered.columns]
 dim = st.selectbox("Break down by:", dim_options, key="breakdown_dim")
 
 by_dim = (
@@ -368,7 +381,7 @@ st.plotly_chart(fig3, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------
-# Chart 5 — Attendance Count by chosen dimension (NEW)
+# Chart 5 — Attendance Count by chosen dimension
 # ---------------------------------------------------
 st.subheader("✅ Attendance Count Breakdown")
 
@@ -601,6 +614,18 @@ if "Location" in filtered.columns:
     st.plotly_chart(attendance_snapshot("Location", "Location", theme), use_container_width=True,
                     config=export_config("attendance_location_wise", 1600, 700))
 
+# 6) Shrinkage % — Lender wise
+if "Lender" in filtered.columns:
+    st.markdown("**6️⃣ Shrinkage % — Lender wise**")
+    st.plotly_chart(breakdown_snapshot("Lender", "Lender", theme), use_container_width=True,
+                    config=export_config("shrinkage_lender_wise", 1600, 700))
+
+# 7) Attendance Count — Lender wise
+if "Lender" in filtered.columns:
+    st.markdown("**7️⃣ Attendance Count — Lender wise**")
+    st.plotly_chart(attendance_snapshot("Lender", "Lender", theme), use_container_width=True,
+                    config=export_config("attendance_lender_wise", 1600, 700))
+
 # ---------------------------------------------------
 # One-click PowerPoint (native, editable charts)
 # ---------------------------------------------------
@@ -711,7 +736,8 @@ def _bar_slide(prs, th, title, subtitle, footer, labels, values,
     ca.tick_labels.font.color.rgb = _rgb(th["text"])
 
 
-def build_pptx(th, items, pod_df, loc_df, att_pod_df, att_loc_df, subtitle, footer):
+def build_pptx(th, items, pod_df, loc_df, att_pod_df, att_loc_df, lender_df, att_lender_df,
+               subtitle, footer):
     prs = Presentation()
     prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)     # 16:9
     _summary_slide(prs, th, items, subtitle, footer)
@@ -721,6 +747,9 @@ def build_pptx(th, items, pod_df, loc_df, att_pod_df, att_loc_df, subtitle, foot
     if loc_df is not None and not loc_df.empty:
         _bar_slide(prs, th, "Shrinkage % — Location wise", subtitle, footer,
                    loc_df["Location"].tolist(), loc_df["Shrinkage %"].tolist())
+    if lender_df is not None and not lender_df.empty:
+        _bar_slide(prs, th, "Shrinkage % — Lender wise", subtitle, footer,
+                   lender_df["Lender"].tolist(), lender_df["Shrinkage %"].tolist())
     if att_pod_df is not None and not att_pod_df.empty:
         _bar_slide(prs, th, "Attendance Count — POD Leader wise", subtitle, footer,
                    att_pod_df["POD Leader"].tolist(), att_pod_df["Attendance"].tolist(),
@@ -728,6 +757,10 @@ def build_pptx(th, items, pod_df, loc_df, att_pod_df, att_loc_df, subtitle, foot
     if att_loc_df is not None and not att_loc_df.empty:
         _bar_slide(prs, th, "Attendance Count — Location wise", subtitle, footer,
                    att_loc_df["Location"].tolist(), att_loc_df["Attendance"].tolist(),
+                   series_name="Attendance Count", label_fmt='#,##0', axis_fmt='#,##0')
+    if att_lender_df is not None and not att_lender_df.empty:
+        _bar_slide(prs, th, "Attendance Count — Lender wise", subtitle, footer,
+                   att_lender_df["Lender"].tolist(), att_lender_df["Attendance"].tolist(),
                    series_name="Attendance Count", label_fmt='#,##0', axis_fmt='#,##0')
     buf = BytesIO()
     prs.save(buf)
@@ -749,6 +782,8 @@ if PPTX_OK:
             breakdown_df("Location") if "Location" in filtered.columns else None,
             attendance_df("POD Leader") if "POD Leader" in filtered.columns else None,
             attendance_df("Location") if "Location" in filtered.columns else None,
+            breakdown_df("Lender") if "Lender" in filtered.columns else None,
+            attendance_df("Lender") if "Lender" in filtered.columns else None,
             ppt_subtitle, ppt_footer,
         )
         st.download_button(
@@ -756,7 +791,7 @@ if PPTX_OK:
             "application/vnd.openxmlformats-officedocument.presentationml.presentation",
             key="dl_pptx",
         )
-        st.caption("5 slides (Summary, Shrinkage % by POD Leader & Location, Attendance Count by POD Leader & Location) "
+        st.caption("7 slides (Summary, then Shrinkage % and Attendance Count by POD Leader, Location & Lender) "
                    "using the selected image style and filters. "
                    "The charts are native PowerPoint charts: right-click → Edit Data, or copy them into your own deck.")
     except Exception as e:
