@@ -471,6 +471,82 @@ st.plotly_chart(fig_cnt, use_container_width=True)
 st.markdown("---")
 
 # ---------------------------------------------------
+# Chart 7 — Advisor-wise Attendance Summary (every advisor in view)
+# ---------------------------------------------------
+st.subheader("👤 Advisor-wise Attendance Summary")
+st.caption("One row per advisor. Attendance Status codes are grouped as: Present = Present / NA / New · "
+           "Leave = ML / CO / PL / SL / EL · Absent = LOP · plus HalfDay, WO (Week Off) and Holiday as they are. "
+           "Working Days = Present + 0.5 × HalfDay. Roster Days = days with Roster Count > 0.")
+
+# Attendance Status (upper-case) -> group used in this table
+STATUS_MAP = {
+    "HOLIDAY": "Holiday", "PRESENT": "Present", "WO": "Week Off",
+    "HALFDAY": "HalfDay", "HALF DAY": "HalfDay",
+    "ML": "Leave", "CO": "Leave", "PL": "Leave", "SL": "Leave", "EL": "Leave",
+    "LOP": "Absent", "NA": "Present", "NEW": "Present",
+}
+STATUS_COLS = ["Present", "HalfDay", "Leave", "Absent", "Week Off", "Holiday", "Other", "Not Marked"]
+
+if "Attendance Status" not in filtered.columns or "EMP ID" not in filtered.columns:
+    st.info("This table needs the 'EMP ID' and 'Attendance Status' columns in the sheet.")
+else:
+    adv_period = st.radio(
+        "Period:",
+        ["📅 Selected date range (filters above)", "🗓️ MTD (month of the latest date in view)"],
+        horizontal=True, key="adv_period",
+    )
+    adv_src = filtered.copy()
+    if adv_period.startswith("🗓️"):
+        _last = adv_src["Date"].max()
+        adv_src = adv_src[(adv_src["Date"].dt.year == _last.year) & (adv_src["Date"].dt.month == _last.month)]
+
+    _raw = adv_src["Attendance Status"].astype(str).str.strip()
+    adv_src["Status Group"] = (
+        _raw.str.upper().map(STATUS_MAP).mask(_raw == "", "Not Marked").fillna("Other")
+    )
+    adv_src["_roster_day"] = (adv_src["Roster Count"] > 0).astype(int)
+
+    counts = (
+        adv_src.pivot_table(index="EMP ID", columns="Status Group", values="Date",
+                            aggfunc="count", fill_value=0)
+        .reindex(columns=STATUS_COLS, fill_value=0)
+    )
+    attr_cols = [c for c in ["Name", "TL", "AM", "CM", "POD Leader", "Location", "Lender", "Final",
+                             "Active Status"] if c in adv_src.columns]
+    attrs = adv_src.sort_values("Date").groupby("EMP ID")[attr_cols].last()
+    days = adv_src.groupby("EMP ID").agg(**{"Total Days": ("Date", "nunique"),
+                                            "Roster Days": ("_roster_day", "sum")})
+
+    adv_tbl = attrs.join(days).join(counts).reset_index()
+    adv_tbl["Working Days"] = adv_tbl["Present"] + 0.5 * adv_tbl["HalfDay"]
+    adv_tbl["Attendance % (vs Roster)"] = (
+        (adv_tbl["Working Days"] / adv_tbl["Roster Days"] * 100)
+        .where(adv_tbl["Roster Days"] > 0, 0).round(1)
+    )
+
+    # Hide the catch-all columns when there is nothing in them
+    for _c in ["Other", "Not Marked"]:
+        if adv_tbl[_c].sum() == 0:
+            adv_tbl = adv_tbl.drop(columns=_c)
+
+    lead = ["EMP ID"] + attr_cols
+    metrics = ["Total Days", "Roster Days", "Working Days"] + \
+              [c for c in STATUS_COLS if c in adv_tbl.columns] + ["Attendance % (vs Roster)"]
+    adv_tbl = adv_tbl[lead + metrics].sort_values("Name" if "Name" in lead else "EMP ID")
+
+    st.caption(f"{len(adv_tbl):,} advisors · {adv_src['Date'].min():%d %b %Y} – {adv_src['Date'].max():%d %b %Y}")
+    st.dataframe(adv_tbl, use_container_width=True, hide_index=True)
+    st.download_button("⬇️ Download Advisor Attendance CSV", adv_tbl.to_csv(index=False),
+                       "advisor_attendance_summary.csv", "text/csv", key="dl_adv_csv")
+
+    if "Other" in adv_tbl.columns:
+        _unk = sorted(_raw[adv_src["Status Group"] == "Other"].unique())
+        st.warning("Some Attendance Status values are not in the mapping and are counted under 'Other': "
+                   + ", ".join(_unk))
+
+st.markdown("---")
+
+# ---------------------------------------------------
 # PowerPoint Snapshots — export-ready visuals
 # ---------------------------------------------------
 st.subheader("📸 PowerPoint Snapshots")
