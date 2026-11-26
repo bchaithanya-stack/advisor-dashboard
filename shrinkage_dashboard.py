@@ -650,8 +650,8 @@ import html as _html
 st.subheader("🧾 Count Summary Table")
 st.caption("Active Headcount, Rostered, Week Off and Present follow the same rules as the Overall Count Breakdown "
            "(counted in advisor-days over the selected dates). "
-           "UPL (Unplanned Leave) = active, rostered advisor-days with Attendance Status LOP. "
-           "Shrinkage % = (Rostered − Present) ÷ Rostered.")
+           "UPL (Unplanned Leave) = Rostered − Present, so the columns always add up. "
+           "Shrinkage % = UPL ÷ Rostered (a negative UPL means more people were present than rostered).")
 
 cs = filtered.copy()
 if "Active Status" in cs.columns:
@@ -660,19 +660,11 @@ else:
     _cs_act = pd.Series(True, index=cs.index)
 _cs_r = cs["Roster Count"] > 0
 
-if "Attendance Status" in cs.columns:
-    _cs_raw = cs["Attendance Status"].astype(str).str.strip()
-    _cs_grp = _cs_raw.str.upper().map(STATUS_MAP).mask(_cs_raw == "", "Not Marked").fillna("Other")
-    _cs_upl = _cs_act & _cs_r & (_cs_grp == "Absent")
-else:   # no Attendance Status column -> treat rostered + zero attendance as unplanned
-    _cs_upl = _cs_act & _cs_r & (cs["Attendance Count"] == 0)
-
 cs["Active Headcount"] = _cs_act.astype(int)
 cs["Rostered"] = (_cs_act & _cs_r).astype(int)
 cs["Week Off"] = (_cs_act & ~_cs_r).astype(int)
 cs["Present"] = (_cs_act & (cs["Attendance Count"] > 0)).astype(int)
-cs["UPL"] = _cs_upl.astype(int)
-CS_METRICS = ["Active Headcount", "Rostered", "Week Off", "Present", "UPL"]
+CS_METRICS = ["Active Headcount", "Rostered", "Week Off", "Present"]
 
 cs_dims = [c for c in ["TL", "AM", "CM", "POD Leader", "Lender", "Location", "City"] if c in cs.columns]
 cs_dim = st.selectbox("Break down by:", cs_dims, key="cs_dim")
@@ -682,10 +674,12 @@ cs_tbl = (
     .groupby(cs_dim)[CS_METRICS].sum()
     .reset_index()
 )
+cs_tbl["UPL"] = cs_tbl["Rostered"] - cs_tbl["Present"]
 cs_tbl["Shrinkage %"] = shrinkage(cs_tbl["Rostered"], cs_tbl["Present"])
 cs_tbl = cs_tbl.sort_values("Active Headcount", ascending=False).reset_index(drop=True)
 
 _tot = cs[CS_METRICS].sum()
+_tot["UPL"] = _tot["Rostered"] - _tot["Present"]
 _tot_shrink = ((_tot["Rostered"] - _tot["Present"]) / _tot["Rostered"] * 100) if _tot["Rostered"] > 0 else 0
 st.caption(f"Overall: Active Headcount {int(_tot['Active Headcount']):,} · Rostered {int(_tot['Rostered']):,} · "
            f"Week Off {int(_tot['Week Off']):,} · Present {int(_tot['Present']):,} · "
@@ -763,15 +757,15 @@ else:
     n = min(3, len(cs_s) // 2)
     best = cs_s.nsmallest(n, "Shrinkage %")
     worst = cs_s.nlargest(n, "Shrinkage %")
-    upl_top = cs_s[cs_s["UPL"] > 0].nlargest(n, "UPL %")
+    upl_top = cs_s[cs_s["UPL"] > 0].nlargest(n, "UPL")
 
     def _rows(df_, mode):
         parts = []
         for _, r in df_.iterrows():
             diff = r["Shrinkage %"] - _tot_shrink
-            extra = (f"{r['UPL %']:.1f}% of rostered days were UPL" if mode == "upl"
+            extra = (f"{r['Shrinkage %']:.1f}% of rostered days" if mode == "upl"
                      else f"{diff:+.1f} pts vs overall")
-            val = f"{r['UPL %']:.1f}%" if mode == "upl" else f"{r['Shrinkage %']:.1f}%"
+            val = f"{int(r['UPL']):,} days" if mode == "upl" else f"{r['Shrinkage %']:.1f}%"
             parts.append(
                 f"<div style='margin:8px 0;'><b>{_html.escape(str(r[cs_dim]))}</b> — {val}"
                 f"<br><span style='color:#b8bcff;font-size:13px;'>{extra} · {int(r['Rostered']):,} rostered · "
@@ -792,7 +786,7 @@ else:
         st.markdown(_box("⚠️ Needs attention (highest shrinkage)", "#ef4444", _rows(worst, "shrink")),
                     unsafe_allow_html=True)
     with g3:
-        st.markdown(_box("🚨 Highest unplanned leave (UPL %)", "#f59e0b", _rows(upl_top, "upl")),
+        st.markdown(_box("🚨 Most unplanned leave (UPL days)", "#f59e0b", _rows(upl_top, "upl")),
                     unsafe_allow_html=True)
 
     better = int((cs_s["Shrinkage %"] < _tot_shrink).sum())
@@ -804,10 +798,6 @@ else:
         f"({worst.iloc[0][cs_dim]}, {worst.iloc[0]['Shrinkage %']:.1f}%) is {spread:.1f} pts — "
         f"learn from the best and focus coaching on the worst.",
     ]
-    both = set(worst[cs_dim]) & set(upl_top[cs_dim]) if len(upl_top) else set()
-    if both:
-        notes.append("High shrinkage and high UPL together for: " + ", ".join(sorted(map(str, both)))
-                     + " — unplanned absence is likely the main driver there.")
     st.markdown("<br>" + "".join(f"<div style='margin:4px 0;'>• {_html.escape(x)}</div>" for x in notes),
                 unsafe_allow_html=True)
 
