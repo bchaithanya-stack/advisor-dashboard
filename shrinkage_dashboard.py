@@ -149,6 +149,14 @@ def load_data() -> pd.DataFrame:
             if col in df.columns:
                 df[col] = df[col].astype(str).str.strip()
 
+        # City derived from Location (Bangalore / Mumbai / Kolkata; otherwise the Location itself)
+        if "Location" in df.columns:
+            _loc = df["Location"].str.lower()
+            df["City"] = df["Location"]
+            df.loc[_loc.str.contains("bangalore|bengaluru", na=False), "City"] = "Bangalore"
+            df.loc[_loc.str.contains("mumbai", na=False), "City"] = "Mumbai"
+            df.loc[_loc.str.contains("kolkata", na=False), "City"] = "Kolkata"
+
         # Remove excluded Final / Lender values everywhere in the dashboard
         for col, bad in (("Final", EXCLUDE_FINAL), ("Lender", EXCLUDE_LENDER)):
             if col in df.columns:
@@ -369,7 +377,7 @@ st.markdown("---")
 # ---------------------------------------------------
 st.subheader("📊 Shrinkage % Breakdown")
 
-dim_options = [c for c in ["TL", "AM", "CM", "POD Leader", "Location", "Lender", "Final"]
+dim_options = [c for c in ["TL", "AM", "CM", "POD Leader", "Location", "City", "Lender", "Final"]
                if c in filtered.columns]
 dim = st.selectbox("Break down by:", dim_options, key="breakdown_dim")
 
@@ -418,7 +426,8 @@ st.markdown("---")
 # ---------------------------------------------------
 st.subheader("🧮 Overall Count Breakdown")
 st.caption("Starts from Active Headcount (advisor-days where Active Status = Active), then splits it into "
-           "Rostered / Week Off and Present / Absent. Absent = active and Attendance Count = 0, irrespective of roster.")
+           "Rostered / Week Off and Present / Absent. Absent = active and Attendance Count = 0, irrespective of roster. "
+           "Shrinkage % = (Rostered − Present) ÷ Rostered.")
 
 ACTIVE_VALUE = "active"     # matches Active Status == "Active" (case-insensitive; "Inactive" is excluded)
 
@@ -441,12 +450,17 @@ cnt_df["Present"] = (_act & _a).astype(int)
 cnt_df["Absent (Attendance = 0)"] = (_act & _zero).astype(int)
 cnt_df["Present (Not Rostered)"] = (_act & ~_r & _a).astype(int)
 
-k1, k2, k3, k4, k5 = st.columns(5)
+_rostered_tot = int(cnt_df["Rostered"].sum())
+_present_tot = int(cnt_df["Present"].sum())
+cnt_shrink = ((_rostered_tot - _present_tot) / _rostered_tot * 100) if _rostered_tot > 0 else 0
+
+k1, k2, k3, k4, k5, k6 = st.columns(6)
 with k1: card("👥 Active Headcount", f"{int(cnt_df['Active Headcount'].sum()):,}")
-with k2: card("🗓️ Rostered", f"{int(cnt_df['Rostered'].sum()):,}")
+with k2: card("🗓️ Rostered", f"{_rostered_tot:,}")
 with k3: card("🛌 Week Off", f"{int(cnt_df['Week Off'].sum()):,}")
-with k4: card("✅ Present", f"{int(cnt_df['Present'].sum()):,}")
+with k4: card("✅ Present", f"{_present_tot:,}")
 with k5: card("❌ Absent (Attendance = 0)", f"{int(cnt_df['Absent (Attendance = 0)'].sum()):,}")
+with k6: card("📉 Shrinkage %", f"{cnt_shrink:.2f}%")
 
 cnt_dim = st.selectbox("Break down by:", dim_options, key="count_breakdown_dim")
 
@@ -457,6 +471,7 @@ by_cnt = (
     .reset_index()
     .sort_values("Active Headcount", ascending=False)
 )
+by_cnt["Shrinkage %"] = shrinkage(by_cnt["Rostered"], by_cnt["Present"])
 
 plot_cols = ["Active Headcount", "Rostered", "Week Off", "Present", "Absent (Attendance = 0)"]
 cnt_long = by_cnt.melt(id_vars=cnt_dim, value_vars=plot_cols, var_name="Category", value_name="Count")
@@ -628,333 +643,143 @@ else:
 st.markdown("---")
 
 # ---------------------------------------------------
-# PowerPoint Snapshots — export-ready visuals
+# Chart 8 — Count Summary Table + Suggestions
 # ---------------------------------------------------
-st.subheader("📸 PowerPoint Snapshots")
-st.caption("Hover over a visual and click the 📷 camera icon (top-right of the visual) to download it "
-           "as a high-resolution PNG, then paste it into your slide. "
-           "All snapshots follow the filters selected above.")
+import html as _html
 
-SNAP_THEMES = {
-    "dark": dict(bg="#090a2f", card="#17194c", border="#545eff", muted="#9da2ff",
-                 text="#ffffff", bar="#7f63ff", grid="#2a2d63"),
-    "light": dict(bg="#ffffff", card="#eef0ff", border="#5058d4", muted="#4b52b6",
-                  text="#1a1d53", bar="#5058d4", grid="#e3e5f5"),
-}
+st.subheader("🧾 Count Summary Table")
+st.caption("Active Headcount, Rostered, Week Off and Present follow the same rules as the Overall Count Breakdown "
+           "(counted in advisor-days over the selected dates). "
+           "UPL (Unplanned Leave) = active, rostered advisor-days with Attendance Status LOP. "
+           "Shrinkage % = (Rostered − Present) ÷ Rostered.")
 
-snap_choice = st.radio("Image style:", ["🌙 Dark (matches dashboard)", "☀️ Light (white background)"],
-                       horizontal=True, key="snap_style")
-theme = SNAP_THEMES["dark"] if snap_choice.startswith("🌙") else SNAP_THEMES["light"]
-
-
-def export_config(name, width, height):
-    """Plotly modebar config -> the camera icon downloads a crisp PNG of this size."""
-    return {
-        "displaylogo": False,
-        "toImageButtonOptions": {"format": "png", "filename": name,
-                                 "width": width, "height": height, "scale": 2},
-    }
-
-
-def summary_figure(items, th):
-    """Row of KPI cards drawn as a Plotly figure so it can be exported as an image."""
-    n = len(items)
-    gap = 0.02
-    w = (1 - gap * (n - 1)) / n
-    fig = go.Figure()
-    for i, (title, value) in enumerate(items):
-        x0 = i * (w + gap)
-        x1 = x0 + w
-        xm = (x0 + x1) / 2
-        fig.add_shape(type="rect", xref="paper", yref="paper", x0=x0, x1=x1, y0=0.04, y1=0.96,
-                      fillcolor=th["card"], line=dict(color=th["border"], width=2), layer="below")
-        fig.add_annotation(xref="paper", yref="paper", x=xm, y=0.70, text=title, showarrow=False,
-                           xanchor="center", yanchor="middle", font=dict(size=16, color=th["muted"]))
-        fig.add_annotation(xref="paper", yref="paper", x=xm, y=0.36, text=f"<b>{value}</b>",
-                           showarrow=False, xanchor="center", yanchor="middle",
-                           font=dict(size=36, color=th["text"]))
-    fig.update_layout(height=190, margin=dict(l=8, r=8, t=8, b=8),
-                      paper_bgcolor=th["bg"], plot_bgcolor=th["bg"],
-                      xaxis=dict(visible=False), yaxis=dict(visible=False))
-    return fig
-
-
-def breakdown_df(dim_col):
-    """Shrinkage % per value of one dimension (highest first)."""
-    d = (filtered.groupby(dim_col)
-         .agg(Roster=("Roster Count", "sum"), Attendance=("Attendance Count", "sum"))
-         .reset_index())
-    d = d[(d[dim_col] != "") & (d["Roster"] > 0)]
-    d["Shrinkage %"] = shrinkage(d["Roster"], d["Attendance"])
-    return d.sort_values("Shrinkage %", ascending=False)
-
-
-def breakdown_snapshot(dim_col, label, th):
-    """Shrinkage % bar chart for one dimension, styled for slides."""
-    d = breakdown_df(dim_col)
-
-    fig = px.bar(d, x=dim_col, y="Shrinkage %", text="Shrinkage %")
-    fig.update_traces(marker_color=th["bar"], texttemplate="%{text:.1f}%", textposition="outside",
-                      cliponaxis=False, textfont=dict(color=th["text"], size=14))
-    fig.update_layout(
-        title=dict(text=f"<b>Shrinkage % — {label} wise</b>", font=dict(size=22, color=th["text"]), x=0.01),
-        paper_bgcolor=th["bg"], plot_bgcolor=th["bg"], font=dict(color=th["text"]),
-        height=470, margin=dict(l=40, r=20, t=70, b=60),
-        xaxis=dict(title="", tickfont=dict(size=13), showgrid=False),
-        yaxis=dict(title="Shrinkage %", gridcolor=th["grid"], zeroline=False),
-        bargap=0.35,
-    )
-    return fig
-
-
-def attendance_df(dim_col):
-    """Attendance Count per value of one dimension (highest first)."""
-    d = (filtered.groupby(dim_col)
-         .agg(Roster=("Roster Count", "sum"), Attendance=("Attendance Count", "sum"))
-         .reset_index())
-    d = d[d[dim_col] != ""]
-    return d.sort_values("Attendance", ascending=False)
-
-
-def attendance_snapshot(dim_col, label, th):
-    """Attendance Count bar chart for one dimension, styled for slides."""
-    d = attendance_df(dim_col)
-
-    fig = px.bar(d, x=dim_col, y="Attendance", text="Attendance")
-    fig.update_traces(marker_color=th["bar"], texttemplate="%{text:,.0f}", textposition="outside",
-                      cliponaxis=False, textfont=dict(color=th["text"], size=14))
-    fig.update_layout(
-        title=dict(text=f"<b>Attendance Count — {label} wise</b>", font=dict(size=22, color=th["text"]), x=0.01),
-        paper_bgcolor=th["bg"], plot_bgcolor=th["bg"], font=dict(color=th["text"]),
-        height=470, margin=dict(l=40, r=20, t=70, b=60),
-        xaxis=dict(title="", tickfont=dict(size=13), showgrid=False),
-        yaxis=dict(title="Attendance Count", gridcolor=th["grid"], zeroline=False),
-        bargap=0.35,
-    )
-    return fig
-
-
-# 1) Summary strip
-adv_in_view = filtered["EMP ID"].nunique() if "EMP ID" in filtered.columns else "-"
-summary_items = [
-    ("Overall Shrinkage %", f"{overall_shrink:.2f}%"),
-    ("Avg Daily Shrinkage %", f"{daily['Shrinkage %'].mean():.2f}%"),
-    ("Avg Daily Roster", f"{daily['Roster'].mean():,.1f}"),
-    ("Avg Daily Attendance", f"{daily['Attendance'].mean():,.1f}"),
-    ("Advisors in View", f"{adv_in_view}"),
-]
-st.markdown("**1️⃣ Summary**")
-st.plotly_chart(summary_figure(summary_items, theme), use_container_width=True,
-                config=export_config("shrinkage_summary", 1600, 220))
-
-# 2) POD Leader wise
-if "POD Leader" in filtered.columns:
-    st.markdown("**2️⃣ Shrinkage % — POD Leader wise**")
-    st.plotly_chart(breakdown_snapshot("POD Leader", "POD Leader", theme), use_container_width=True,
-                    config=export_config("shrinkage_pod_leader_wise", 1600, 700))
-
-# 3) Location wise
-if "Location" in filtered.columns:
-    st.markdown("**3️⃣ Shrinkage % — Location wise**")
-    st.plotly_chart(breakdown_snapshot("Location", "Location", theme), use_container_width=True,
-                    config=export_config("shrinkage_location_wise", 1600, 700))
-
-# 4) Attendance Count — POD Leader wise
-if "POD Leader" in filtered.columns:
-    st.markdown("**4️⃣ Attendance Count — POD Leader wise**")
-    st.plotly_chart(attendance_snapshot("POD Leader", "POD Leader", theme), use_container_width=True,
-                    config=export_config("attendance_pod_leader_wise", 1600, 700))
-
-# 5) Attendance Count — Location wise
-if "Location" in filtered.columns:
-    st.markdown("**5️⃣ Attendance Count — Location wise**")
-    st.plotly_chart(attendance_snapshot("Location", "Location", theme), use_container_width=True,
-                    config=export_config("attendance_location_wise", 1600, 700))
-
-# 6) Shrinkage % — Lender wise
-if "Lender" in filtered.columns:
-    st.markdown("**6️⃣ Shrinkage % — Lender wise**")
-    st.plotly_chart(breakdown_snapshot("Lender", "Lender", theme), use_container_width=True,
-                    config=export_config("shrinkage_lender_wise", 1600, 700))
-
-# 7) Attendance Count — Lender wise
-if "Lender" in filtered.columns:
-    st.markdown("**7️⃣ Attendance Count — Lender wise**")
-    st.plotly_chart(attendance_snapshot("Lender", "Lender", theme), use_container_width=True,
-                    config=export_config("attendance_lender_wise", 1600, 700))
-
-# ---------------------------------------------------
-# One-click PowerPoint (native, editable charts)
-# ---------------------------------------------------
-try:
-    from io import BytesIO
-    from pptx import Presentation
-    from pptx.util import Inches, Pt
-    from pptx.dml.color import RGBColor
-    from pptx.chart.data import CategoryChartData
-    from pptx.enum.chart import XL_CHART_TYPE, XL_LABEL_POSITION
-    from pptx.enum.text import PP_ALIGN, MSO_ANCHOR
-    from pptx.enum.shapes import MSO_SHAPE
-    PPTX_OK = True
-except ImportError:
-    PPTX_OK = False
-
-
-def _rgb(hex_color):
-    return RGBColor.from_string(hex_color.lstrip("#").upper())
-
-
-def _add_text(slide, text, left, top, width, height, size, color, bold=False, align=None):
-    tb = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
-    tf = tb.text_frame
-    tf.word_wrap = True
-    p = tf.paragraphs[0]
-    if align is not None:
-        p.alignment = align
-    r = p.add_run()
-    r.text = text
-    r.font.size, r.font.bold, r.font.name = Pt(size), bold, "Calibri"
-    r.font.color.rgb = _rgb(color)
-
-
-def _new_slide(prs, th, title, subtitle, footer):
-    slide = prs.slides.add_slide(prs.slide_layouts[6])          # blank layout
-    slide.background.fill.solid()
-    slide.background.fill.fore_color.rgb = _rgb(th["bg"])
-    _add_text(slide, title, 0.5, 0.35, 12.3, 0.7, 30, th["text"], bold=True)
-    _add_text(slide, subtitle, 0.5, 1.0, 12.3, 0.4, 14, th["muted"])
-    _add_text(slide, footer, 0.5, 6.95, 12.3, 0.35, 11, th["muted"])
-    return slide
-
-
-def _summary_slide(prs, th, items, subtitle, footer):
-    slide = _new_slide(prs, th, "Shrinkage Summary", subtitle, footer)
-    n, gap, margin = len(items), 0.2, 0.5
-    w = (13.333 - 2 * margin - gap * (n - 1)) / n
-    for i, (title, value) in enumerate(items):
-        shp = slide.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, Inches(margin + i * (w + gap)),
-                                     Inches(2.4), Inches(w), Inches(2.3))
-        shp.adjustments[0] = 0.12
-        shp.fill.solid()
-        shp.fill.fore_color.rgb = _rgb(th["card"])
-        shp.line.color.rgb = _rgb(th["border"])
-        shp.line.width = Pt(1.75)
-        shp.shadow.inherit = False
-        tf = shp.text_frame
-        tf.word_wrap = True
-        tf.vertical_anchor = MSO_ANCHOR.MIDDLE
-        p1 = tf.paragraphs[0]
-        p1.alignment = PP_ALIGN.CENTER
-        r1 = p1.add_run()
-        r1.text = title
-        r1.font.size, r1.font.name = Pt(14), "Calibri"
-        r1.font.color.rgb = _rgb(th["muted"])
-        p2 = tf.add_paragraph()
-        p2.alignment = PP_ALIGN.CENTER
-        r2 = p2.add_run()
-        r2.text = str(value)
-        r2.font.size, r2.font.bold, r2.font.name = Pt(34), True, "Calibri"
-        r2.font.color.rgb = _rgb(th["text"])
-
-
-def _bar_slide(prs, th, title, subtitle, footer, labels, values,
-               series_name="Shrinkage %", label_fmt='0.0"%"', axis_fmt='0"%"'):
-    slide = _new_slide(prs, th, title, subtitle, footer)
-    cd = CategoryChartData()
-    cd.categories = labels
-    cd.add_series(series_name, [float(v) for v in values])
-    chart = slide.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.5), Inches(1.6),
-                                   Inches(12.33), Inches(5.25), cd).chart
-    chart.has_legend = False
-    chart.has_title = False
-    chart.font.size, chart.font.name = Pt(12), "Calibri"
-    chart.font.color.rgb = _rgb(th["text"])
-
-    plot = chart.plots[0]
-    plot.gap_width = 60
-    plot.has_data_labels = True
-    dl = plot.data_labels
-    dl.number_format, dl.number_format_is_linked = label_fmt, False
-    dl.position = XL_LABEL_POSITION.OUTSIDE_END
-    dl.font.size = Pt(12)
-    dl.font.color.rgb = _rgb(th["text"])
-    plot.series[0].format.fill.solid()
-    plot.series[0].format.fill.fore_color.rgb = _rgb(th["bar"])
-
-    va = chart.value_axis
-    va.has_major_gridlines = True
-    va.major_gridlines.format.line.color.rgb = _rgb(th["grid"])
-    va.format.line.fill.background()
-    va.tick_labels.number_format, va.tick_labels.number_format_is_linked = axis_fmt, False
-    va.tick_labels.font.color.rgb = _rgb(th["text"])
-    ca = chart.category_axis
-    ca.has_major_gridlines = False
-    ca.format.line.color.rgb = _rgb(th["grid"])
-    ca.tick_labels.font.color.rgb = _rgb(th["text"])
-
-
-def build_pptx(th, items, pod_df, loc_df, att_pod_df, att_loc_df, lender_df, att_lender_df,
-               subtitle, footer):
-    prs = Presentation()
-    prs.slide_width, prs.slide_height = Inches(13.333), Inches(7.5)     # 16:9
-    _summary_slide(prs, th, items, subtitle, footer)
-    if pod_df is not None and not pod_df.empty:
-        _bar_slide(prs, th, "Shrinkage % — POD Leader wise", subtitle, footer,
-                   pod_df["POD Leader"].tolist(), pod_df["Shrinkage %"].tolist())
-    if loc_df is not None and not loc_df.empty:
-        _bar_slide(prs, th, "Shrinkage % — Location wise", subtitle, footer,
-                   loc_df["Location"].tolist(), loc_df["Shrinkage %"].tolist())
-    if lender_df is not None and not lender_df.empty:
-        _bar_slide(prs, th, "Shrinkage % — Lender wise", subtitle, footer,
-                   lender_df["Lender"].tolist(), lender_df["Shrinkage %"].tolist())
-    if att_pod_df is not None and not att_pod_df.empty:
-        _bar_slide(prs, th, "Attendance Count — POD Leader wise", subtitle, footer,
-                   att_pod_df["POD Leader"].tolist(), att_pod_df["Attendance"].tolist(),
-                   series_name="Attendance Count", label_fmt='#,##0', axis_fmt='#,##0')
-    if att_loc_df is not None and not att_loc_df.empty:
-        _bar_slide(prs, th, "Attendance Count — Location wise", subtitle, footer,
-                   att_loc_df["Location"].tolist(), att_loc_df["Attendance"].tolist(),
-                   series_name="Attendance Count", label_fmt='#,##0', axis_fmt='#,##0')
-    if att_lender_df is not None and not att_lender_df.empty:
-        _bar_slide(prs, th, "Attendance Count — Lender wise", subtitle, footer,
-                   att_lender_df["Lender"].tolist(), att_lender_df["Attendance"].tolist(),
-                   series_name="Attendance Count", label_fmt='#,##0', axis_fmt='#,##0')
-    buf = BytesIO()
-    prs.save(buf)
-    return buf.getvalue()
-
-
-st.markdown("**📥 Get all as an editable PowerPoint**")
-
-if PPTX_OK:
-    try:
-        label_map = {"Final": "Process"}
-        d_min, d_max = filtered["Date"].min(), filtered["Date"].max()
-        ppt_subtitle = f"Period: {d_min:%d %b %Y} – {d_max:%d %b %Y}"
-        ppt_footer = "Filters: " + (", ".join(f"{label_map.get(k, k)}: {', '.join(v)}" for k, v in active_filters.items())
-                                    or "None (all data)")
-        pptx_bytes = build_pptx(
-            theme, summary_items,
-            breakdown_df("POD Leader") if "POD Leader" in filtered.columns else None,
-            breakdown_df("Location") if "Location" in filtered.columns else None,
-            attendance_df("POD Leader") if "POD Leader" in filtered.columns else None,
-            attendance_df("Location") if "Location" in filtered.columns else None,
-            breakdown_df("Lender") if "Lender" in filtered.columns else None,
-            attendance_df("Lender") if "Lender" in filtered.columns else None,
-            ppt_subtitle, ppt_footer,
-        )
-        st.download_button(
-            "⬇️ Download PowerPoint (.pptx)", pptx_bytes, "Shrinkage_Snapshots.pptx",
-            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-            key="dl_pptx",
-        )
-        st.caption("7 slides (Summary, then Shrinkage % and Attendance Count by POD Leader, Location & Lender) "
-                   "using the selected image style and filters. "
-                   "The charts are native PowerPoint charts: right-click → Edit Data, or copy them into your own deck.")
-    except Exception as e:
-        st.error(f"Could not build the PowerPoint: {type(e).__name__}: {e}")
+cs = filtered.copy()
+if "Active Status" in cs.columns:
+    _cs_act = cs["Active Status"].astype(str).str.strip().str.lower().eq(ACTIVE_VALUE)
 else:
-    st.info("To enable the PowerPoint download, add a line `python-pptx` to requirements.txt in GitHub and redeploy.")
+    _cs_act = pd.Series(True, index=cs.index)
+_cs_r = cs["Roster Count"] > 0
+
+if "Attendance Status" in cs.columns:
+    _cs_raw = cs["Attendance Status"].astype(str).str.strip()
+    _cs_grp = _cs_raw.str.upper().map(STATUS_MAP).mask(_cs_raw == "", "Not Marked").fillna("Other")
+    _cs_upl = _cs_act & _cs_r & (_cs_grp == "Absent")
+else:   # no Attendance Status column -> treat rostered + zero attendance as unplanned
+    _cs_upl = _cs_act & _cs_r & (cs["Attendance Count"] == 0)
+
+cs["Active Headcount"] = _cs_act.astype(int)
+cs["Rostered"] = (_cs_act & _cs_r).astype(int)
+cs["Week Off"] = (_cs_act & ~_cs_r).astype(int)
+cs["Present"] = (_cs_act & (cs["Attendance Count"] > 0)).astype(int)
+cs["UPL"] = _cs_upl.astype(int)
+CS_METRICS = ["Active Headcount", "Rostered", "Week Off", "Present", "UPL"]
+
+cs_dims = [c for c in ["TL", "AM", "CM", "POD Leader", "Lender", "Location", "City"] if c in cs.columns]
+cs_dim = st.selectbox("Break down by:", cs_dims, key="cs_dim")
+
+cs_tbl = (
+    cs[cs[cs_dim] != ""]
+    .groupby(cs_dim)[CS_METRICS].sum()
+    .reset_index()
+)
+cs_tbl["Shrinkage %"] = shrinkage(cs_tbl["Rostered"], cs_tbl["Present"])
+cs_tbl = cs_tbl.sort_values("Active Headcount", ascending=False).reset_index(drop=True)
+
+_tot = cs[CS_METRICS].sum()
+_tot_shrink = ((_tot["Rostered"] - _tot["Present"]) / _tot["Rostered"] * 100) if _tot["Rostered"] > 0 else 0
+st.caption(f"Overall: Active Headcount {int(_tot['Active Headcount']):,} · Rostered {int(_tot['Rostered']):,} · "
+           f"Week Off {int(_tot['Week Off']):,} · Present {int(_tot['Present']):,} · "
+           f"UPL {int(_tot['UPL']):,} · Shrinkage {_tot_shrink:.2f}%")
+
+CS_COLORS = {"Active Headcount": "#5b5ef7", "Rostered": "#8b5cf6", "Week Off": "#a855f7",
+             "Present": "#22c55e", "UPL": "#ef4444"}
+
+
+def _shade_shrink(col):
+    """Low shrinkage = green, high = red (relative to this column)."""
+    good, bad = (25, 160, 110), (190, 45, 65)
+    lo, hi = col.min(), col.max()
+    out = []
+    for v in col:
+        t = 0 if hi == lo else (v - lo) / (hi - lo)
+        rgb = tuple(int(good[i] + (bad[i] - good[i]) * t) for i in range(3))
+        out.append(f"background-color: rgb{rgb}; color: white; font-weight: 700")
+    return out
+
+
+_cs_sty = cs_tbl.style.set_properties(subset=[cs_dim], **{"background-color": "#262a75", "color": "#e6e8ff",
+                                                          "font-weight": "600"})
+for _c, _hex in CS_COLORS.items():
+    _cs_sty = _cs_sty.apply(_shade_scale, hex_color=_hex, subset=[_c])
+_cs_sty = _cs_sty.apply(_shade_shrink, subset=["Shrinkage %"]).format({"Shrinkage %": "{:.1f}%"})
+
+st.dataframe(_cs_sty, use_container_width=True, hide_index=True)
+st.download_button("⬇️ Download Count Summary CSV", cs_tbl.to_csv(index=False),
+                   f"count_summary_by_{cs_dim.replace(' ', '_').lower()}.csv", "text/csv", key="dl_cs_csv")
+
+# ----- Suggestions: who is doing well / who needs attention -----
+st.markdown("#### 💡 Suggestions")
+min_roster = st.number_input(
+    f"Ignore {cs_dim} values with fewer Rostered days than:", min_value=0, value=10, step=5,
+    key="cs_min_roster",
+    help="Tiny groups swing a lot, so they are left out of the good / bad lists.",
+)
+cs_s = cs_tbl[cs_tbl["Rostered"] >= min_roster].copy()
+cs_s["UPL %"] = (cs_s["UPL"] / cs_s["Rostered"] * 100).where(cs_s["Rostered"] > 0, 0)
+
+if len(cs_s) < 2:
+    st.info("Not enough groups above the minimum Rostered days to compare. Lower the minimum above.")
+else:
+    n = min(3, len(cs_s) // 2)
+    best = cs_s.nsmallest(n, "Shrinkage %")
+    worst = cs_s.nlargest(n, "Shrinkage %")
+    upl_top = cs_s[cs_s["UPL"] > 0].nlargest(n, "UPL %")
+
+    def _rows(df_, mode):
+        parts = []
+        for _, r in df_.iterrows():
+            diff = r["Shrinkage %"] - _tot_shrink
+            extra = (f"{r['UPL %']:.1f}% of rostered days were UPL" if mode == "upl"
+                     else f"{diff:+.1f} pts vs overall")
+            val = f"{r['UPL %']:.1f}%" if mode == "upl" else f"{r['Shrinkage %']:.1f}%"
+            parts.append(
+                f"<div style='margin:8px 0;'><b>{_html.escape(str(r[cs_dim]))}</b> — {val}"
+                f"<br><span style='color:#b8bcff;font-size:13px;'>{extra} · {int(r['Rostered']):,} rostered · "
+                f"{int(r['UPL']):,} UPL</span></div>")
+        return "".join(parts) or "<div style='color:#b8bcff;'>None</div>"
+
+    def _box(title, color, body):
+        return (f"<div style='background:#17194c;border:1px solid {color};border-left:6px solid {color};"
+                f"border-radius:14px;padding:16px 18px;height:100%;'>"
+                f"<div style='color:{color};font-weight:700;font-size:16px;margin-bottom:6px;'>{title}</div>"
+                f"{body}</div>")
+
+    g1, g2, g3 = st.columns(3)
+    with g1:
+        st.markdown(_box("🏆 Doing well (lowest shrinkage)", "#22c55e", _rows(best, "shrink")),
+                    unsafe_allow_html=True)
+    with g2:
+        st.markdown(_box("⚠️ Needs attention (highest shrinkage)", "#ef4444", _rows(worst, "shrink")),
+                    unsafe_allow_html=True)
+    with g3:
+        st.markdown(_box("🚨 Highest unplanned leave (UPL %)", "#f59e0b", _rows(upl_top, "upl")),
+                    unsafe_allow_html=True)
+
+    better = int((cs_s["Shrinkage %"] < _tot_shrink).sum())
+    spread = cs_s["Shrinkage %"].max() - cs_s["Shrinkage %"].min()
+    notes = [
+        f"{better} of {len(cs_s)} {cs_dim} values are below the overall shrinkage of {_tot_shrink:.1f}%; "
+        f"{len(cs_s) - better} are at or above it.",
+        f"The gap between the best ({best.iloc[0][cs_dim]}, {best.iloc[0]['Shrinkage %']:.1f}%) and the worst "
+        f"({worst.iloc[0][cs_dim]}, {worst.iloc[0]['Shrinkage %']:.1f}%) is {spread:.1f} pts — "
+        f"learn from the best and focus coaching on the worst.",
+    ]
+    both = set(worst[cs_dim]) & set(upl_top[cs_dim]) if len(upl_top) else set()
+    if both:
+        notes.append("High shrinkage and high UPL together for: " + ", ".join(sorted(map(str, both)))
+                     + " — unplanned absence is likely the main driver there.")
+    st.markdown("<br>" + "".join(f"<div style='margin:4px 0;'>• {_html.escape(x)}</div>" for x in notes),
+                unsafe_allow_html=True)
 
 st.markdown("---")
 
