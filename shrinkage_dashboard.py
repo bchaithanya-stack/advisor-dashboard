@@ -691,27 +691,57 @@ st.caption(f"Overall: Active Headcount {int(_tot['Active Headcount']):,} · Rost
            f"Week Off {int(_tot['Week Off']):,} · Present {int(_tot['Present']):,} · "
            f"UPL {int(_tot['UPL']):,} · Shrinkage {_tot_shrink:.2f}%")
 
-CS_COLORS = {"Active Headcount": "#5b5ef7", "Rostered": "#8b5cf6", "Week Off": "#a855f7",
-             "Present": "#22c55e", "UPL": "#ef4444"}
+# Soft, minimal styling: dark cells, coloured numbers, light tints only where it carries meaning
+_CS_BG = (21, 24, 70)            # #151846, same as the dashboard cards
 
 
-def _shade_shrink(col):
-    """Low shrinkage = green, high = red (relative to this column)."""
-    good, bad = (25, 160, 110), (190, 45, 65)
-    lo, hi = col.min(), col.max()
+def _mix(accent, t):
+    return "rgb" + str(tuple(int(_CS_BG[i] + (accent[i] - _CS_BG[i]) * t) for i in range(3)))
+
+
+def _plain(color):
+    """Neutral dark cell with a coloured number."""
+    return lambda col: [f"background-color: #151846; color: {color}; font-weight: 600" for _ in col]
+
+
+def _upl_style(col):
+    """Zero stays quiet; anything above zero gets a gentle red tint that grows with the value."""
+    mx = col.max()
     out = []
     for v in col:
-        t = 0 if hi == lo else (v - lo) / (hi - lo)
-        rgb = tuple(int(good[i] + (bad[i] - good[i]) * t) for i in range(3))
-        out.append(f"background-color: rgb{rgb}; color: white; font-weight: 700")
+        if v <= 0:
+            out.append("background-color: #151846; color: #6f75b0; font-weight: 500")
+        else:
+            out.append(f"background-color: {_mix((239, 68, 68), 0.18 + 0.27 * (v / mx))}; "
+                       f"color: #fecaca; font-weight: 700")
     return out
 
 
-_cs_sty = cs_tbl.style.set_properties(subset=[cs_dim], **{"background-color": "#262a75", "color": "#e6e8ff",
-                                                          "font-weight": "600"})
-for _c, _hex in CS_COLORS.items():
-    _cs_sty = _cs_sty.apply(_shade_scale, hex_color=_hex, subset=[_c])
-_cs_sty = _cs_sty.apply(_shade_shrink, subset=["Shrinkage %"]).format({"Shrinkage %": "{:.1f}%"})
+def _shrink_style(col):
+    """Below the overall shrinkage = soft green, above = soft red (stronger the further away)."""
+    dist = (col - _tot_shrink).abs().max()
+    out = []
+    for v in col:
+        d = (v - _tot_shrink) / dist if dist > 0 else 0
+        if d <= 0:
+            out.append(f"background-color: {_mix((34, 197, 94), 0.15 + 0.30 * abs(d))}; "
+                       f"color: #bbf7d0; font-weight: 700")
+        else:
+            out.append(f"background-color: {_mix((239, 68, 68), 0.15 + 0.30 * d)}; "
+                       f"color: #fecaca; font-weight: 700")
+    return out
+
+
+_cs_sty = (
+    cs_tbl.style
+    .set_properties(subset=[cs_dim], **{"background-color": "#1d2057", "color": "#cfd2ff", "font-weight": "600"})
+    .apply(_plain("#e6e8ff"), subset=["Active Headcount", "Rostered"])
+    .apply(_plain("#a5a9d6"), subset=["Week Off"])
+    .apply(_plain("#86efac"), subset=["Present"])
+    .apply(_upl_style, subset=["UPL"])
+    .apply(_shrink_style, subset=["Shrinkage %"])
+    .format({"Shrinkage %": "{:.1f}%"})
+)
 
 st.dataframe(_cs_sty, use_container_width=True, hide_index=True)
 st.download_button("⬇️ Download Count Summary CSV", cs_tbl.to_csv(index=False),
